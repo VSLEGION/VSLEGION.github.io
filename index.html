@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vaishanth Engineering Portfolio</title>
+  <style>
+    :root {
+      --bg: #05030a;          /* deep space backdrop */
+      --ink: #e9f1ff;         /* near-white text */
+
+      /* Glow: --glow is the halo colour (last value = intensity); others are radii. */
+      --glow: rgba(249, 125, 21, 0.6);
+      --glow-name: 22px;   /* headline glow radius */
+      --glow-btn: 16px;    /* button glow radius */
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); overflow: hidden; }
+    body { font-family: ui-sans-serif, system-ui, "Segoe UI", Arial, sans-serif; }
+
+    /* The animation lives here */
+    #field { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; }
+
+    /* ---- Foreground UI (your portfolio chrome) ---- */
+    .stage {
+      position: fixed; inset: 0; pointer-events: none;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 2.2rem;
+    }
+
+    /* ---- Retro pixel headline + buttons (self-hosted font, works offline) ---- */
+    @font-face {
+      font-family: "Press Start 2P";
+      font-style: normal; font-weight: 400; font-display: swap;
+      src: url("fonts/PressStart2P.woff2") format("woff2");
+    }
+
+    .name {
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      text-transform: uppercase;
+      color: var(--ink);
+      text-align: center;
+      line-height: 1.5;
+      letter-spacing: 2px;
+      font-size: clamp(18px, 4.4vw, 52px);
+      /* Hard pixel drop-shadow + soft glow (radius/colour from the :root vars). */
+      text-shadow:
+        4px 4px 0 #000,
+        0 0 var(--glow-name) var(--glow);
+      -webkit-font-smoothing: none;      /* keep the edges crisp / pixelated */
+      image-rendering: pixelated;
+    }
+    .name .given { display: block; }
+    .name .family { display: block; color: #ffd24a; }   /* amber accent line, on-palette */
+
+    .actions { display: flex; gap: 1.6rem; flex-wrap: wrap; justify-content: center; }
+
+    .btn {
+      pointer-events: auto;                /* re-enable clicks (the .stage ignores them) */
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      text-transform: uppercase;
+      font-size: clamp(10px, 1.5vw, 16px);
+      letter-spacing: 1px;
+      color: #0a0612;
+      background: #ffffff;
+      border: 0; border-radius: 0;         /* hard pixel corners */
+      padding: 16px 20px;
+      cursor: pointer;
+      text-decoration: none;
+      /* Solid offset (pixel/arcade depth) + soft glow halo around the block. */
+      box-shadow: 6px 6px 0 #000, 0 0 var(--glow-btn) var(--glow);
+      transition: transform .05s steps(2), box-shadow .05s steps(2);
+    }
+    .btn:hover  { transform: translate(2px, 2px); box-shadow: 4px 4px 0 #000, 0 0 var(--glow-btn) var(--glow); background: #ffd24a; }
+    .btn:active { transform: translate(6px, 6px); box-shadow: 0 0 0 #000, 0 0 var(--glow-btn) var(--glow); }
+    .btn:focus-visible { outline: 3px solid #ffd24a; outline-offset: 4px; }
+
+    /* ---- Top-right controls: Thorne Mode + Physics toggle ---- */
+    .controls { position: fixed; top: 18px; right: 18px; display: flex; gap: 10px; z-index: 5; pointer-events: none; }
+    .ui-btn {
+      pointer-events: auto;
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+      color: var(--ink); background: rgba(20, 12, 30, 0.6);
+      border: 1px solid rgba(249, 125, 21, 0.5); border-radius: 0;
+      padding: 10px 12px; cursor: pointer;
+      box-shadow: 0 0 var(--glow-btn) rgba(249, 125, 21, 0.22);
+      transition: background .15s, color .15s;
+    }
+    .ui-btn:hover { background: rgba(249, 125, 21, 0.85); color: #0a0612; }
+    .ui-btn[aria-pressed="true"] { background: #ffd24a; color: #0a0612; }
+
+    /* ---- Physics telemetry sidebar (slides in from the right) ----
+       Solid panel (no backdrop-filter) so it never re-blurs the live canvas. */
+    .sidebar {
+      position: fixed; top: 0; right: 0; height: 100%;
+      width: min(330px, 86vw);
+      background: rgba(8, 5, 14, 0.93);
+      border-left: 1px solid rgba(249, 125, 21, 0.35);
+      box-shadow: -10px 0 34px rgba(0, 0, 0, 0.5);
+      transform: translateX(100%);
+      transition: transform .3s ease;
+      z-index: 6; pointer-events: auto;
+      padding: 22px 20px; overflow-y: auto;
+      font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+      color: #d7e3ff;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar h2 { font-family: "Press Start 2P", ui-monospace, monospace; font-size: 12px; color: #ffd24a; margin: 0 0 6px; letter-spacing: 1px; line-height: 1.4; }
+    .sidebar .sub { font-size: 11px; color: #8a93ad; margin-bottom: 14px; }
+    .sidebar .grp { margin: 18px 0 6px; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #f97d15; border-bottom: 1px solid rgba(249, 125, 21, 0.2); padding-bottom: 4px; }
+    .sidebar .row { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; padding: 3px 0; }
+    .sidebar .row .k { color: #8a93ad; }
+    .sidebar .row .v { color: #e9f1ff; font-variant-numeric: tabular-nums; text-align: right; }
+    .sidebar .close { position: absolute; top: 12px; right: 14px; background: none; border: 0; color: #8a93ad; font-size: 20px; line-height: 1; cursor: pointer; }
+    .sidebar .close:hover { color: #ffd24a; }
+
+    /* Collapsible "equations" dropdown inside the sidebar (native <details>). */
+    .eqs { margin-top: 20px; }
+    .eqs > summary {
+      cursor: pointer; list-style: none;
+      font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #f97d15;
+      border-bottom: 1px solid rgba(249, 125, 21, 0.2); padding-bottom: 4px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .eqs > summary::-webkit-details-marker { display: none; }
+    .eqs > summary::after { content: "\25B8"; color: #8a93ad; transition: transform .2s ease; }
+    .eqs[open] > summary::after { transform: rotate(90deg); }
+    .eqs .eq { padding: 9px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+    .eqs .eq .lbl { color: #8a93ad; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 5px; }
+    .eqs .eq code { display: block; color: #d7e3ff; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .eqs .eq code .hot { color: #ffd24a; }
+
+    /* ---- Thorne Mode: fade out the hero chrome, but KEEP the Physics toggle ----
+       so the sidebar can still be opened while admiring the simulation. */
+    body.thorne .stage { opacity: 0; pointer-events: none; }
+    body.thorne #thorneBtn { display: none; }    /* already in Thorne mode */
+    #physBtn { display: none; }                   /* Physics toggle exists ONLY in Thorne mode */
+    body.thorne #physBtn { display: inline-block; }
+    .stage, .controls, .sidebar { transition: opacity .4s ease, transform .3s ease; }
+    .exit-hint {
+      position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+      font-family: "Press Start 2P", ui-monospace, monospace; font-size: 9px;
+      color: rgba(231, 241, 255, 0.55); letter-spacing: 1px;
+      opacity: 0; pointer-events: none; transition: opacity .4s ease; z-index: 7;
+    }
+    body.thorne .exit-hint { opacity: 1; }
+  </style>
+</head>
+<body>
+  <canvas id="field"></canvas>
+
+  <!-- Foreground UI: retro pixel headline + buttons, centered over the black hole. -->
+  <div class="stage">
+    <h1 class="name">
+      <span class="given">Vaishanth</span>
+      <span class="family">Srinivasan</span>
+    </h1>
+    <nav class="actions">
+      <a class="btn" href="#about">About Me</a>
+      <a class="btn" href="#projects">Project Reservoir</a>
+    </nav>
+  </div>
+
+  <!-- Top-right controls -->
+  <div class="controls">
+    <button class="ui-btn" id="physBtn" aria-pressed="false">Physics</button>
+    <button class="ui-btn" id="thorneBtn">Thorne Mode</button>
+  </div>
+
+  <!-- Live physics telemetry (only computes while open) -->
+  <aside class="sidebar" id="sidebar" aria-hidden="true">
+    <button class="close" id="sbClose" aria-label="Close telemetry">&times;</button>
+    <h2>Physics<br>Telemetry</h2>
+    <div class="sub">Schwarzschild null-geodesic tracer · live</div>
+
+    <div class="grp">Performance</div>
+    <div class="row"><span class="k">FPS</span><span class="v" id="t_fps">–</span></div>
+    <div class="row"><span class="k">Frame time</span><span class="v" id="t_ms">–</span></div>
+    <div class="row"><span class="k">Rays / frame</span><span class="v" id="t_rays">–</span></div>
+
+    <div class="grp">Ray fate (light transport)</div>
+    <div class="row"><span class="k">Captured · shadow</span><span class="v" id="t_cap">–</span></div>
+    <div class="row"><span class="k">Disk hits</span><span class="v" id="t_disk">–</span></div>
+    <div class="row"><span class="k">Escaped · lensed</span><span class="v" id="t_bg">–</span></div>
+
+    <div class="grp">Camera</div>
+    <div class="row"><span class="k">Inclination</span><span class="v" id="t_incl">–</span></div>
+    <div class="row"><span class="k">Roll / tilt</span><span class="v" id="t_tilt">–</span></div>
+    <div class="row"><span class="k">Vantage</span><span class="v" id="t_side">–</span></div>
+
+    <div class="grp">Geometry · Schwarzschild units (Rs = 1)</div>
+    <div class="row"><span class="k">Event horizon</span><span class="v">1.00 Rs</span></div>
+    <div class="row"><span class="k">Photon sphere</span><span class="v">1.50 Rs</span></div>
+    <div class="row"><span class="k">Shadow radius</span><span class="v">2.60 Rs</span></div>
+    <div class="row"><span class="k">Disk inner → outer</span><span class="v" id="t_disko">–</span></div>
+    <div class="row"><span class="k">Integration steps</span><span class="v" id="t_steps">–</span></div>
+
+    <details class="eqs">
+      <summary>Gravitational ray equations</summary>
+
+      <div class="eq">
+        <div class="lbl">Spacetime · Schwarzschild metric</div>
+        <code>ds² = −(1 − rs/r)c²dt² + (1 − rs/r)⁻¹dr² + r²dΩ²</code>
+      </div>
+      <div class="eq">
+        <div class="lbl">Conserved angular momentum (per ray)</div>
+        <code>h² = |r × v|²   — set at the camera, constant along the path</code>
+      </div>
+      <div class="eq">
+        <div class="lbl">Photon deflection · integrated every step</div>
+        <code><span class="hot">a = −1.5 · h² · r / |r|⁵</span></code>
+      </div>
+      <div class="eq">
+        <div class="lbl">Symplectic Euler integrator</div>
+        <code>v ← v + a·Δλ
+r ← r + v·Δλ</code>
+      </div>
+      <div class="eq">
+        <div class="lbl">Adaptive step size</div>
+        <code>Δλ = clamp(0.1·|r|, 0.02, 0.6)</code>
+      </div>
+      <div class="eq">
+        <div class="lbl">Event horizon · capture</div>
+        <code>|r| &lt; rs = 1  →  ray falls into the shadow</code>
+      </div>
+      <div class="eq">
+        <div class="lbl">Critical surfaces</div>
+        <code>photon sphere = 1.5 rs
+shadow radius  = 3√3 / 2 ≈ 2.598 rs</code>
+      </div>
+      <div class="eq">
+        <div class="lbl">Accretion-disk intersection</div>
+        <code>y flips sign  ∧  r_in ≤ √(x²+z²) ≤ r_out</code>
+      </div>
+      <div class="eq">
+        <div class="lbl">Relativistic Doppler beaming</div>
+        <code>I ∝ 1 + β ( t̂_orbit · n̂_los )</code>
+      </div>
+      <div class="eq">
+        <div class="lbl">Photon-ring halo</div>
+        <code>glow = exp( −(r_min − 1.5)² / 0.4 )</code>
+      </div>
+    </details>
+  </aside>
+
+  <div class="exit-hint">Thorne Mode — press Esc or click to exit</div>
+
+<script>
+"use strict";
+
+// Tunable knobs. Radii are in Schwarzschild units (event horizon Rs = 1).
+const CONFIG = {
+  fontSize:    16,      // glyph size in px (drives grid density)
+  lineHeight:  1.25,    // cell height = fontSize * lineHeight
+  maxDPR:      1.5,     // cap device-pixel-ratio (lower = fewer pixels = faster on retina)
+
+  // ---- Black-hole geometry (Schwarzschild units, horizon radius = 1) ----
+  horizon:     1.0,     // capture radius -> the black shadow
+  diskInner:   2.7,     // inner edge of the accretion disk
+  diskOuter:   11.0,    // outer edge of the accretion disk
+  camDist:     17.0,    // camera distance from the hole
+  camElev:     0.22,    // camera elevation above the disk plane (rad) — near edge-on, like the photo
+  tilt:        0.30,    // roll the whole black hole (rad) — tilts the disk diagonally
+  tiltDrift:   0.04,    // slow extra roll oscillation amplitude (rad) so the tilt breathes
+  fov:         0.60,    // field-of-view spread (smaller = more zoomed in)
+  parallax:    0.10,    // full-scale horizontal sway from pointer X
+  lookRange:   0.52,    // vertical pointer swing of elevation (rad, ~30 deg): up = underside, down = top
+  mouseSense:  0.5,     // overall pointer sensitivity (1 = full scale)
+
+  steps:       120,     // max geodesic integration steps per ray (near the hole only)
+  beam:        0.45,    // Doppler beaming (the side spinning toward you is brighter)
+  spin:        0.20,    // accretion-disk rotation speed (text streams around it)
+  drift:       0.22,    // ambient field morph speed
+  ringGlow:    0.95,    // photon-ring halo brightness in the lensed background
+
+  // Continuous lensed-code background field (always rendered, dim so the hole dominates).
+  noiseScale:  1.4,     // spatial frequency of the field bands
+  octaves:     3,       // fBm detail
+  bgGlow:      1.0,     // master brightness of the background field
+  bgScroll:    0.6,     // how fast the background code streams (continuous motion)
+  contrast:    1.7,     // ridge/valley separation of the field
+  ambientLow:  0.03,    // dimmest background cell -> deep purple
+  ambientHigh: 0.17,    // brightest background cell -> magenta (kept below the disk's range)
+
+  levels:      26,      // color quantization buckets (perf: fewer fillStyle changes)
+
+  // "Inferno" thermodynamic ramp [r,g,b], cold valley first -> hot ridge last
+  palette: [
+    [27,18,34],     // warm near-black (matches lifted backdrop)
+    [40,11,84],     // deep purple
+    [101,21,110],   // purple
+    [159,42,99],    // magenta
+    [212,72,66],    // red
+    [245,125,21],   // orange
+    [250,193,39],   // amber
+    [252,255,164],  // pale yellow (hottest)
+  ],
+};
+
+/* Source text the glyphs are sampled from — gives the "scrolling code" identity. */
+const SOURCE = `
+KR01_Genesis_Navier_Stokes_Incompressible_Continuity = "div(u) = 0"
+VS67_Sauron_Navier_Stokes_Incompressible_Momentum = "rho * (du/dt + u * grad(u)) = -grad(p) + mu * del^2(u) + f"
+IO99_Gatekeeper_Navier_Stokes_Compressible_Continuity = "d(rho)/dt + div(rho * u) = 0"
+GX10_Iris_Navier_Stokes_Viscous_Stress_Tensor = "tau = 2 * mu * E + lambda * div(u) * I"
+SC55_Cerberus_Navier_Stokes_Vorticity_Transport = "d(omega)/dt + (u * grad)*omega = (omega * grad)*u + nu * del^2(omega)"
+TR66_Hunter_Navier_Stokes_Reynolds_Averaged_Momentum = "rho * u_j * d(u_i)/dx_j = rho * f_i + d/dx_j * [-p * delta_ij + mu * (d(u_i)/dx_j + d(u_j)/dx_i) - rho * u_i_prime * u_j_prime]"
+OB33_Monolith_General_Relativity_Einstein_Field_Equations = "G_mu_nu + Lambda * g_mu_nu = 8 * pi * G / c^4 * T_mu_nu"
+CPX4_Cortex_General_Relativity_Geodesic_Equation = "d^2(x_mu)/d(lambda)^2 + Gamma_mu_alpha_beta * d(x_alpha)/d(lambda) * d(x_beta)/d(lambda) = 0"
+DP44_Prism_General_Relativity_Riemann_Curvature_Tensor = "R_rho_sigma_mu_nu = d_mu(Gamma_rho_nu_sigma) - d_nu(Gamma_rho_mu_sigma) + Gamma_rho_mu_lambda * Gamma_lambda_nu_sigma - Gamma_rho_nu_lambda * Gamma_lambda_mu_sigma"
+CR99_Enigma_General_Relativity_Schwarzschild_Metric = "ds^2 = -(1 - 2*G*M / (c^2 * r)) * c^2 * dt^2 + (1 - 2*G*M / (c^2 * r))^-1 * dr^2 + r^2 * d(Omega)^2"
+RC01_Spectre_General_Relativity_Killing_Equation = "grad_mu(xi_nu) + grad_nu(xi_mu) = 0"
+AI00_Oracle_General_Relativity_Ricci_Tensor = "R_mu_nu = R_lambda_mu_lambda_nu"
+VM82_Mnemosyne_Isentropic_Flow_Stagnation_Pressure_Ratio = "P0 / P = (1 + (gamma - 1) / 2 * M^2)^(gamma / (gamma - 1))"
+VS88_Argus_Isentropic_Flow_Stagnation_Temperature_Ratio = "T0 / T = 1 + (gamma - 1) / 2 * M^2"
+NK23_Hermes_Isentropic_Flow_Stagnation_Density_Ratio = "rho0 / rho = (1 + (gamma - 1) / 2 * M^2)^(1 / (gamma - 1))"
+WB09_Valkyrie_Isentropic_Flow_Area_Mach_Relation = "A / A_star = (1 / M) * ((2 / (gamma + 1)) * (1 + (gamma - 1) / 2 * M^2))^((gamma + 1) / (2 * (gamma - 1)))"
+EV77_Horizon_Isentropic_Flow_Speed_of_Sound = "a = sqrt(gamma * R * T)"
+BT00_Zero_Isentropic_Flow_Characteristic_Mach_Number = "M_star = M * sqrt((gamma + 1) / (2 + (gamma - 1) * M^2))"
+TX09_Chroma_Thermodynamics_First_Law = "dU = dQ - dW"
+ID07_Ghost_Thermodynamics_Fundamental_Relation = "dU = T * dS - P * dV"
+SNX1_Viper_Thermodynamics_Gibbs_Free_Energy = "G = H - T * S"
+BM19_Leviathan_Thermodynamics_Clausius_Clapeyron = "dP / dT = L / (T * delta_V)"
+PS12_Dynamo_Thermodynamics_Ideal_Gas_Law = "P * V = n * R * T"
+HZ60_Refresh_Thermodynamics_Maxwell_Relation = "dT / dV_S = -dP / dS_V"
+PL13_Locksmith_Discretization_Central_Difference_First_Derivative = "d(phi)/dx = (phi_i_plus_1 - phi_i_minus_1) / (2 * delta_x)"
+DF05_Phalanx_Discretization_Central_Difference_Second_Derivative = "d^2(phi)/dx^2 = (phi_i_plus_1 - 2 * phi_i + phi_i_minus_1) / delta_x^2"
+XF51_Roswell_Discretization_Forward_Euler = "u_n_plus_1 = u_n + delta_t * f(t_n, u_n)"
+LU01_Lumens_Discretization_Crank_Nicolson = "(u_n_plus_1 - u_n) / delta_t = 0.5 * (F(u_n_plus_1) + F(u_n))"
+SH42_Aegis_Discretization_First_Order_Upwind = "v * d(phi)/dx = v * (phi_i - phi_i_minus_1) / delta_x"
+SY99_Overlord_Discretization_Runge_Kutta_Fourth_Order = "u_n_plus_1 = u_n + (delta_t / 6) * (k1 + 2*k2 + 2*k3 + k4)"
+`;
+const LINES = SOURCE.trim().split("\n").map(s => s.trim() + "  ");
+
+/* ---- Fast integer-lattice value noise + fBm (no deps, no Math.sin hashing) ---- */
+function vhash(ix, iy, iz) {
+  let n = (ix | 0) * 374761393 + (iy | 0) * 668265263 + (iz | 0) * 1274126177;
+  n = (n ^ (n >>> 13)) >>> 0;
+  n = (n * 1274126177) >>> 0;
+  return (n & 0xffffff) / 0x1000000;          // [0,1)
+}
+const smooth = t => t * t * (3 - 2 * t);        // smoothstep
+function valueNoise(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const xf = smooth(x - xi), yf = smooth(y - yi), zf = smooth(z - zi);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const c000 = vhash(xi,   yi,   zi),   c100 = vhash(xi+1, yi,   zi);
+  const c010 = vhash(xi,   yi+1, zi),   c110 = vhash(xi+1, yi+1, zi);
+  const c001 = vhash(xi,   yi,   zi+1), c101 = vhash(xi+1, yi,   zi+1);
+  const c011 = vhash(xi,   yi+1, zi+1), c111 = vhash(xi+1, yi+1, zi+1);
+  return lerp(
+    lerp(lerp(c000, c100, xf), lerp(c010, c110, xf), yf),
+    lerp(lerp(c001, c101, xf), lerp(c011, c111, xf), yf),
+    zf
+  );
+}
+function fbm(x, y, z, octaves) {
+  let sum = 0, amp = 0.5, freq = 1, norm = 0;
+  for (let o = 0; o < octaves; o++) {
+    sum  += amp * valueNoise(x * freq, y * freq, z * freq);
+    norm += amp; amp *= 0.5; freq *= 2;
+  }
+  return sum / norm;                              // [0,1]
+}
+
+// ---- Renderer ----
+const canvas = document.getElementById("field");
+const ctx = canvas.getContext("2d", { alpha: false });
+
+let W = 0, H = 0, dpr = 1;
+let cellW = 0, cellH = 0, cols = 0, rows = 0;
+
+// Precompute the palette LUT once (brightness level -> "rgb(...)" string).
+const LUT = new Array(CONFIG.levels + 1);
+function buildLUT() {
+  const stops = CONFIG.palette, segs = stops.length - 1;
+  for (let i = 0; i <= CONFIG.levels; i++) {
+    const t = i / CONFIG.levels;            // 0..1
+    const s = Math.min(segs - 1, Math.floor(t * segs));
+    const lt = t * segs - s;
+    const a = stops[s], b = stops[s + 1];
+    const r = Math.round(a[0] + (b[0] - a[0]) * lt);
+    const g = Math.round(a[1] + (b[1] - a[1]) * lt);
+    const bl = Math.round(a[2] + (b[2] - a[2]) * lt);
+    LUT[i] = `rgb(${r},${g},${bl})`;
+  }
+}
+buildLUT();
+
+// ---- Ambient brightness LUT: folds Math.pow(contrast) out of the hot loop ----
+const ambLUT = new Float32Array(1024);
+for (let i = 0; i < 1024; i++) {
+  const a = Math.pow(i / 1023, CONFIG.contrast);
+  ambLUT[i] = CONFIG.ambientLow + (CONFIG.ambientHigh - CONFIG.ambientLow) * a;
+}
+
+// ---- Source text as char codes (no per-cell string allocation) ----
+const LINE_CODES = LINES.map(l => {
+  const a = new Uint16Array(l.length);
+  for (let i = 0; i < l.length; i++) a[i] = l.charCodeAt(i);
+  return a;
+});
+function getCodeAt(tx, ty) {
+  const n = LINE_CODES.length;
+  const arr = LINE_CODES[((ty % n) + n) % n];
+  const m = arr.length;
+  return arr[((tx % m) + m) % m];
+}
+
+// ---- Glyph atlas: each glyph is rasterised ONCE, then blitted with drawImage
+//      (far cheaper than fillText per cell). Base atlas = one row per level. ----
+const charCol = new Int16Array(128).fill(-1);   // ASCII code -> atlas column
+const atlasChars = [];
+for (const arr of LINE_CODES) for (const code of arr) {
+  if (code !== 32 && code < 128 && charCol[code] === -1) { charCol[code] = atlasChars.length; atlasChars.push(code); }
+}
+// A solid fallback glyph column so spaces don't punch holes in the disk / photon ring.
+const FALLBACK_COL = charCol[61] >= 0 ? charCol[61] : 0;   // '=' if present, else first
+
+let atlasBase, tileWd, tileHd;
+function buildAtlas() {
+  tileWd = Math.max(1, Math.ceil(cellW * dpr));
+  tileHd = Math.max(1, Math.ceil(cellH * dpr));
+  const fontDev = `${CONFIG.fontSize * dpr}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
+  atlasBase = document.createElement("canvas");
+  atlasBase.width = atlasChars.length * tileWd;
+  atlasBase.height = (CONFIG.levels + 1) * tileHd;
+  const a = atlasBase.getContext("2d");
+  a.textBaseline = "top"; a.font = fontDev;
+  for (let lvl = 0; lvl <= CONFIG.levels; lvl++) {
+    a.fillStyle = LUT[lvl];
+    for (let i = 0; i < atlasChars.length; i++) a.fillText(String.fromCharCode(atlasChars[i]), i * tileWd, lvl * tileHd);
+  }
+}
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR);   // cap DPR for perf
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = `${CONFIG.fontSize}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
+  ctx.textBaseline = "top";
+  cellW = ctx.measureText("M").width || CONFIG.fontSize * 0.6;
+  cellH = CONFIG.fontSize * CONFIG.lineHeight;
+  cols = Math.ceil(W / cellW) + 1;
+  rows = Math.ceil(H / cellH) + 1;
+  buildAtlas();
+}
+window.addEventListener("resize", resize);
+resize();
+
+// Pointer drives a gentle, eased camera parallax (tilts the view of the hole).
+let mxN = 0, myN = 0;          // raw target in [-1,1]
+let pxN = 0, pyN = 0;          // eased
+window.addEventListener("pointermove", e => {
+  mxN = (e.clientX / W - 0.5) * 2;
+  myN = (e.clientY / H - 0.5) * 2;
+});
+
+const TWO_PI = Math.PI * 2;
+
+// ---- Telemetry / UI state. statsOn gates ALL per-cell counting, so when the
+//      sidebar is closed (or in Thorne mode) the hot loop pays nothing for it. ----
+let statsOn = false;
+let fpsAvg = 60, lastT = performance.now(), lastStatT = 0;
+let telElev = 0, telTilt = 0, telCamBelow = false;
+
+function frame(now) {
+  const t = now * 0.001;
+  const asp = W / H;
+
+  // Frame timing is cheap and always on; per-fate counters reset each frame.
+  const dtMs = now - lastT; lastT = now;
+  if (dtMs > 0) fpsAvg += (1000 / dtMs - fpsAvg) * 0.1;
+  let nCap = 0, nDisk = 0, nBg = 0;
+
+  // Hoist hot config values into locals (fewer property lookups per cell).
+  const Rhor = CONFIG.horizon, diskIn = CONFIG.diskInner, diskOut = CONFIG.diskOuter;
+  const diskSpan = diskOut - diskIn;
+  const camDist = CONFIG.camDist, fov = CONFIG.fov, levels = CONFIG.levels;
+  const octaves = CONFIG.octaves, noiseScale = CONFIG.noiseScale, drift = CONFIG.drift;
+  const beam = CONFIG.beam, ringGlow = CONFIG.ringGlow, spin = CONFIG.spin;
+  const bgGlow = CONFIG.bgGlow, bgScroll = CONFIG.bgScroll;
+  const maxSteps = CONFIG.steps, cw = cellW, chh = cellH;
+  const escapeR = camDist * 1.3;
+  const bMissSq = (diskOut * 1.25) * (diskOut * 1.25);   // impact param beyond which a ray misses everything
+
+  // Ease the pointer parallax — smooth camera drift.
+  pxN += (mxN - pxN) * 0.05;
+  pyN += (myN - pyN) * 0.05;
+  // Vertical pointer swings elevation +/- lookRange around the base tilt:
+  // pyN is -1 at the top of the screen -> elevation goes negative -> camera dips below the
+  // disk plane and the BOTTOM of the hole opens up; +1 at the bottom reveals the TOP.
+  const sense = CONFIG.mouseSense;
+  const elev = CONFIG.camElev + pyN * CONFIG.lookRange * sense;
+  const azim = pxN * CONFIG.parallax * sense;                // subtle horizontal sway
+
+  // Camera basis: look at the origin from slightly above the disk plane.
+  const ce = Math.cos(elev), se = Math.sin(elev), ca = Math.cos(azim), sa = Math.sin(azim);
+  const camx = camDist * ce * sa, camy = camDist * se, camz = camDist * ce * ca;
+  if (statsOn) { telElev = elev; telCamBelow = camy < 0; }
+  // forward = normalize(origin - cam)
+  let fx = -camx, fy = -camy, fz = -camz;
+  const fl = 1 / Math.sqrt(fx*fx + fy*fy + fz*fz); fx *= fl; fy *= fl; fz *= fl;
+  // right0 = normalize(cross(forward, worldUp=(0,1,0))) = normalize(-fz, 0, fx)
+  let r0x = -fz, r0z = fx;
+  const rl = 1 / Math.sqrt(r0x*r0x + r0z*r0z); r0x *= rl; r0z *= rl;   // r0y = 0
+  // up0 = cross(right0, forward)  (already unit length)
+  const u0x = -r0z * fy, u0y = r0z * fx - r0x * fz, u0z = r0x * fy;
+  // Tilt = roll the camera frame about the forward axis -> the whole hole tips diagonally.
+  const tilt = CONFIG.tilt + CONFIG.tiltDrift * Math.sin(t * 0.3);
+  if (statsOn) telTilt = tilt;
+  const ct = Math.cos(tilt), st = Math.sin(tilt);
+  const rx = r0x * ct + u0x * st, ry = u0y * st, rz = r0z * ct + u0z * st;   // (r0y = 0)
+  const upx = -r0x * st + u0x * ct, upy = u0y * ct, upz = -r0z * st + u0z * ct;
+
+  // Deep-space backdrop (also paints the event-horizon shadow, since we skip those cells).
+  ctx.fillStyle = "#05030a";
+  ctx.fillRect(0, 0, W, H);
+
+  /* ===================================================================
+     GRAVITATIONAL LENSING — one back-traced light ray per glyph cell.
+
+     We shoot a ray from the camera through each cell and follow it
+     BACKWARD in time to find what light would have reached it. In flat
+     space the ray is straight; near the black hole spacetime is curved,
+     so it bends — that bending is the whole effect.
+
+     A photon is a "null geodesic" of the Schwarzschild metric. In units
+     where the event horizon Rs = 1, its path obeys
+         d²r/dλ²  =  -1.5 · h² · r / |r|⁵
+     r  = position vector of the ray
+     h² = |r × v|² = conserved angular momentum (constant along the path);
+          with |v| = 1 this equals the impact parameter², i.e. how close
+          the ray would pass the hole if it went straight.
+     That single inverse-power attraction toward the centre curves the ray.
+
+     We integrate that ODE step by step. Each ray ends one of three ways:
+       • |r| < Rs         -> swallowed  -> the black shadow
+       • crosses the disk -> a bright accretion-disk glyph
+       • flies away       -> faint lensed background code
+     =================================================================== */
+  for (let gy = 0; gy < rows; gy++) {
+    for (let gx = 0; gx < cols; gx++) {
+      const px = gx * cw, py = gy * chh;
+
+      // Build the primary ray for this cell (cell-centre through the camera frustum).
+      const ndcx = ((px + cw * 0.5) / W * 2 - 1) * asp;
+      const ndcy = -((py + chh * 0.5) / H * 2 - 1);
+      let dx = fx + rx * (ndcx * fov) + upx * (ndcy * fov);
+      let dy = fy + ry * (ndcx * fov) + upy * (ndcy * fov);
+      let dz = fz + rz * (ndcx * fov) + upz * (ndcy * fov);
+      const dl0 = 1 / Math.sqrt(dx*dx + dy*dy + dz*dz); dx *= dl0; dy *= dl0; dz *= dl0;
+
+      // Conserved specific angular momentum squared, h2 = |r x v|^2 (constant on a geodesic).
+      // With |v| = 1 this is the squared impact parameter b^2 (closest straight-line approach).
+      const hx = camy*dz - camz*dy, hy = camz*dx - camx*dz, hz = camx*dy - camy*dx;
+      const h2 = hx*hx + hy*hy + hz*hz;
+
+      // March the ray: position starts at the camera, velocity is the ray direction.
+      let posx = camx, posy = camy, posz = camz, vx = dx, vy = dy, vz = dz;
+      let captured = false, hit = false, rmin = 1e9, rd = 0, phi = 0, beamDot = 0;
+
+      // Fast path: rays passing well outside the disk barely bend and can't be
+      // captured — skip the integration and treat them as straight background.
+      const steps = h2 > bMissSq ? 0 : maxSteps;
+      if (steps === 0) rmin = Math.sqrt(h2);
+
+      for (let s = 0; s < steps; s++) {
+        const r2 = posx*posx + posy*posy + posz*posz;
+        const r = Math.sqrt(r2);
+        if (r < Rhor) { captured = true; break; }       // fell through the horizon
+        if (r < rmin) rmin = r;                          // track closest approach (for the photon ring)
+
+        // Geodesic bending: a = -1.5 · h² · r / |r|⁵  — pull toward the centre.
+        const f = -1.5 * h2 / (r2 * r2 * r);
+        const ax = posx * f, ay = posy * f, az = posz * f;
+
+        // Step size: large far away, small near the hole (and near the thin disk plane).
+        let dl = r * 0.10;
+        if (dl > 0.6) dl = 0.6; else if (dl < 0.02) dl = 0.02;
+        if (posy < 1 && posy > -1 && dl > 0.15) dl = 0.15;
+
+        // Symplectic Euler: update velocity with the pull, then advance position.
+        vx += ax * dl; vy += ay * dl; vz += az * dl;
+        const nposx = posx + vx * dl, nposy = posy + vy * dl, nposz = posz + vz * dl;
+
+        // Disk crossing: sign change in y inside the annulus -> the ray strikes the disk.
+        if ((posy > 0) !== (nposy > 0)) {
+          const tc = posy / (posy - nposy);
+          const ix = posx + (nposx - posx) * tc, iz = posz + (nposz - posz) * tc;
+          const rr = Math.sqrt(ix*ix + iz*iz);
+          if (rr >= diskIn && rr <= diskOut) {
+            hit = true; rd = rr; phi = Math.atan2(iz, ix);
+            // Doppler beaming: orbital tangent (CCW) vs. line of sight to the camera.
+            const losx = camx - ix, losz = camz - iz;
+            const ll = 1 / (Math.sqrt(losx*losx + losz*losz) || 1);
+            beamDot = (-iz / rr * losx + ix / rr * losz) * ll;
+            break;
+          }
+        }
+
+        posx = nposx; posy = nposy; posz = nposz;
+        // Escaped: outside the field and now receding -> treat as a background ray.
+        if (r > escapeR && (posx*vx + posy*vy + posz*vz) > 0) break;
+      }
+
+      if (captured) { if (statsOn) nCap++; continue; }   // inside the shadow — leave the backdrop.
+
+      let col, lvl;
+
+      if (hit) {
+        // --- Accretion disk: hot inner -> cooler outer, with beaming + turbulence ---
+        const tt = (diskOut - rd) / diskSpan;                 // 1 inner -> 0 outer
+        const flick = 0.72 + 0.6 * fbm(rd * 0.55, phi * 1.6 + 10, t * drift + 5, octaves);
+        const dopp = 1 + beam * beamDot;
+        const b = (0.55 + 0.5 * tt) * flick * dopp;
+        lvl = b * levels | 0; if (lvl < 0) lvl = 0; else if (lvl > levels) lvl = levels;
+
+        // Glyphs stream around the disk (azimuth) and band by radius — the disk is "made of" equations.
+        const tx = ((phi / TWO_PI) * 220 + t * spin * 60) | 0;
+        const ty = ((rd - diskIn) / diskSpan * 64) | 0;
+        const code = getCodeAt(tx, ty);
+        col = code === 32 ? FALLBACK_COL : charCol[code];
+        if (col < 0) col = FALLBACK_COL;
+        if (statsOn) nDisk++;
+      } else {
+        if (statsOn) nBg++;
+        // --- Background: continuous faint lensed code field, plus the photon-ring halo ---
+        const vl = 1 / Math.sqrt(vx*vx + vy*vy + vz*vz);
+        const ux = vx * vl, uy = vy * vl, uz = vz * vl;
+        const azi = Math.atan2(ux, uz);                       // [-pi, pi]
+        const el = Math.asin(uy < -1 ? -1 : uy > 1 ? 1 : uy); // [-pi/2, pi/2]
+
+        const amb = fbm((azi + 3) * noiseScale, (el + 3) * noiseScale, t * drift, octaves);
+        const dr = rmin - 1.5;                                // photon sphere ~ 1.5 Rs
+        const rg = ringGlow * Math.exp(-dr * dr / 0.4);       // photon-ring halo
+        // Always-rendered, dim field: every escaping ray paints faint streaming code.
+        const b = ambLUT[(amb * 1023) | 0] * bgGlow + rg;
+        lvl = b * levels | 0; if (lvl < 0) lvl = 0; else if (lvl > levels) lvl = levels;
+
+        const tx = ((azi / TWO_PI + 0.5) * 200 + t * bgScroll) | 0;
+        const ty = ((el / Math.PI + 0.5) * 120 + t * bgScroll * 0.3) | 0;
+        const code = getCodeAt(tx, ty);
+        if (code === 32) {
+          if (rg < 0.25) continue;                            // keep code spacing in the field
+          col = FALLBACK_COL;                                 // but keep the photon ring solid
+        } else {
+          col = charCol[code];
+          if (col < 0) continue;
+        }
+      }
+
+      // Blit the pre-rasterised glyph tile (char column, brightness row).
+      ctx.drawImage(atlasBase, col * tileWd, lvl * tileHd, tileWd, tileHd, px, py, cw, chh);
+    }
+  }
+
+  // Push telemetry to the DOM at most ~5x/sec (never per-frame) and only while open.
+  if (statsOn && now - lastStatT > 200) { updateTelem(nCap, nDisk, nBg); lastStatT = now; }
+
+  // Render continuously — never pause, even when the tab is unfocused/backgrounded.
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+// If the browser throttled rAF while hidden, kick it again the moment we're visible.
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) requestAnimationFrame(frame);
+});
+
+// ---- Telemetry sidebar + Thorne Mode (UI only — no per-frame canvas cost) ----
+const $ = id => document.getElementById(id);
+function updateTelem(nCap, nDisk, nBg) {
+  const total = cols * rows;
+  const pct = n => (100 * n / total).toFixed(1) + "%";
+  $("t_fps").textContent   = fpsAvg.toFixed(0);
+  $("t_ms").textContent    = (1000 / Math.max(fpsAvg, 0.01)).toFixed(1) + " ms";
+  $("t_rays").textContent  = total.toLocaleString() + "  (" + cols + "×" + rows + ")";
+  $("t_cap").textContent   = nCap.toLocaleString() + "  " + pct(nCap);
+  $("t_disk").textContent  = nDisk.toLocaleString() + "  " + pct(nDisk);
+  $("t_bg").textContent    = nBg.toLocaleString() + "  " + pct(nBg);
+  $("t_incl").textContent  = (telElev * 180 / Math.PI).toFixed(1) + "°";
+  $("t_tilt").textContent  = (telTilt * 180 / Math.PI).toFixed(1) + "°";
+  $("t_side").textContent  = telCamBelow ? "below disk · underside" : "above disk · top";
+  $("t_disko").textContent = CONFIG.diskInner.toFixed(1) + " → " + CONFIG.diskOuter.toFixed(1) + " Rs";
+  $("t_steps").textContent = CONFIG.steps;
+}
+
+const sidebar = $("sidebar"), physBtn = $("physBtn"), thorneBtn = $("thorneBtn");
+function setSidebar(open) {
+  statsOn = open;                         // gates the per-cell counters in frame()
+  sidebar.classList.toggle("open", open);
+  sidebar.setAttribute("aria-hidden", String(!open));
+  physBtn.setAttribute("aria-pressed", String(open));
+  if (open) lastStatT = 0;                // refresh immediately
+}
+function setThorne(on) {
+  // Thorne mode only hides the hero chrome; the Physics button + sidebar stay usable,
+  // so telemetry follows the sidebar's own open/closed state (set in setSidebar).
+  document.body.classList.toggle("thorne", on);
+}
+physBtn.addEventListener("click", () => setSidebar(!sidebar.classList.contains("open")));
+$("sbClose").addEventListener("click", () => setSidebar(false));
+thorneBtn.addEventListener("click", () => setThorne(true));
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (document.body.classList.contains("thorne")) setThorne(false);
+  if (sidebar.classList.contains("open")) setSidebar(false);
+});
+// In Thorne mode, clicking the simulation exits — but clicks on the Physics
+// button or inside the sidebar must NOT exit.
+document.addEventListener("click", e => {
+  if (document.body.classList.contains("thorne") &&
+      !e.target.closest(".controls") && !e.target.closest(".sidebar")) setThorne(false);
+});
+</script>
+</body>
+</html>
