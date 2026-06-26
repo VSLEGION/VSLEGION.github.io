@@ -42,7 +42,7 @@
       text-align: center;
       line-height: 1.5;
       letter-spacing: 2px;
-      font-size: clamp(18px, 4.4vw, 52px);
+      font-size: clamp(20px, 5.5vw, 64px);
       /* Hard pixel drop-shadow + soft glow (radius/colour from the :root vars). */
       text-shadow:
         4px 4px 0 #000,
@@ -260,13 +260,13 @@ const CONFIG = {
   diskInner:   2.7,     // inner edge of the accretion disk
   diskOuter:   11.0,    // outer edge of the accretion disk
   camDist:     17.0,    // camera distance from the hole
-  camElev:     0.22,    // camera elevation above the disk plane (rad) — near edge-on, like the photo
+  camElev:     0.12,    // camera elevation above the disk plane (rad) — near edge-on, like the photo
   tilt:        0.30,    // roll the whole black hole (rad) — tilts the disk diagonally
   tiltDrift:   0.04,    // slow extra roll oscillation amplitude (rad) so the tilt breathes
   fov:         0.60,    // field-of-view spread (smaller = more zoomed in)
   parallax:    0.10,    // full-scale horizontal sway from pointer X
   lookRange:   0.52,    // vertical pointer swing of elevation (rad, ~30 deg): up = underside, down = top
-  mouseSense:  0.5,     // overall pointer sensitivity (1 = full scale)
+  mouseSense:  0.6,     // overall pointer sensitivity (1 = full scale)
 
   steps:       120,     // max geodesic integration steps per ray (near the hole only)
   beam:        0.45,    // Doppler beaming (the side spinning toward you is brighter)
