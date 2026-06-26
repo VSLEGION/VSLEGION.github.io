@@ -292,6 +292,157 @@
       #about-panel .photo-frame { width: 120px; aspect-ratio: 3 / 4; flex-shrink: 0; }
     }
 
+    /* ---- Reservoir project grid ---- */
+    #reservoir-projects {
+      position: fixed; inset: 0; z-index: 3;
+      display: flex; align-items: center; justify-content: center;
+      gap: 2rem; flex-wrap: wrap; padding: 6rem 2rem 2rem;
+      pointer-events: none; opacity: 0;
+      transition: opacity .5s ease .2s;
+    }
+    body.reservoir #reservoir-projects { opacity: 1; pointer-events: auto; }
+
+    .proj-card {
+      width: 240px;
+      cursor: pointer;
+      background-color: #0b0716;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='4'%3E%3Crect width='2' height='2' fill='%23f97d15' opacity='0.13'/%3E%3Crect x='2' y='2' width='2' height='2' fill='%23f97d15' opacity='0.13'/%3E%3C/svg%3E");
+      border: 2px solid #f97d15;
+      box-shadow: 6px 6px 0 #000, 0 0 24px rgba(249,125,21,0.25);
+      padding: 1.4rem 1.2rem 1.2rem;
+      transition: transform .05s steps(2), box-shadow .05s steps(2), border-color .1s;
+      animation: pixel-open .2s steps(6) both;
+    }
+    .proj-card:hover {
+      transform: translate(-2px,-2px);
+      box-shadow: 8px 8px 0 #000, 0 0 32px rgba(249,125,21,0.45);
+      border-color: #ffd24a;
+    }
+    .proj-card:active { transform: translate(4px,4px); box-shadow: 2px 2px 0 #000; }
+
+    .proj-card-title {
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      font-size: clamp(12px, 1.6vw, 17px);
+      line-height: 1.7;
+      color: #ffd24a;
+      text-shadow: 3px 3px 0 #000, 0 0 12px rgba(255,210,74,0.4);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: .9rem;
+    }
+    .proj-card-tag {
+      font-family: "JetBrains Mono", monospace;
+      font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+      color: #f97d15; opacity: .8;
+    }
+
+    /* ---- Project viewer panel ---- */
+    #project-viewer {
+      position: fixed; inset: 0; z-index: 10;
+      display: flex; flex-direction: column;
+      background: transparent;
+      opacity: 0; pointer-events: none;
+      transform: scale(0.06);
+      transform-origin: center center;
+      transition: none;
+    }
+    #project-viewer.open {
+      opacity: 1; pointer-events: auto;
+      animation: proj-expand .28s steps(9) forwards;
+    }
+    @keyframes proj-expand {
+      from { transform: scale(0.06); opacity: 0.6; }
+      to   { transform: scale(1);    opacity: 1; }
+    }
+
+    /* Translucent legibility layer behind the whole viewer */
+    #project-viewer::before {
+      content: "";
+      position: absolute; inset: 0; z-index: 0;
+      background: rgba(5, 3, 10, 0.55);
+      pointer-events: none;
+    }
+    #project-viewer > * { position: relative; z-index: 1; }
+
+    #proj-topbar {
+      display: flex; align-items: center; gap: 1.2rem;
+      padding: 14px 20px;
+      border-bottom: 1px solid rgba(249,125,21,0.25);
+      flex-shrink: 0;
+    }
+    #proj-title {
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      font-size: clamp(9px, 1.2vw, 13px);
+      color: #ffd24a; letter-spacing: 1px; text-transform: uppercase;
+      text-shadow: 2px 2px 0 #000;
+      margin: 0; line-height: 1.5;
+    }
+    #proj-viewer-close {
+      margin-left: auto;
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+      color: #8a93ad; background: none;
+      border: 1px solid rgba(249,125,21,0.3); padding: 8px 12px;
+      cursor: pointer; transition: color .1s, background .1s;
+    }
+    #proj-viewer-close:hover { color: #0a0612; background: #f97d15; border-color: #f97d15; }
+
+    #proj-desc-box {
+      flex-shrink: 0;
+      padding: 14px 22px 12px;
+      border-bottom: 1px solid rgba(249,125,21,0.15);
+      background: rgba(5, 3, 10, 0.45);
+    }
+    #proj-desc-box p {
+      font-family: "JetBrains Mono", monospace;
+      font-size: clamp(11px, 1.2vw, 14px);
+      line-height: 1.75; color: #8a93ad; margin: 0;
+    }
+    #proj-desc-box p span { color: #e9f1ff; }
+
+    #proj-iframe-wrap {
+      flex: 1; overflow: hidden;
+      padding: 1rem 1.2rem 1.2rem;
+    }
+    #proj-iframe {
+      width: 100%; height: 100%;
+      border: 1px solid rgba(249,125,21,0.18);
+      background: transparent;
+    }
+
+    /* ---- Reservoir back button ---- */
+    #reservoirBack {
+      position: fixed; top: 18px; left: 18px; z-index: 10;
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+      color: var(--ink); background: rgba(20, 12, 30, 0.6);
+      border: 1px solid rgba(249, 125, 21, 0.5); border-radius: 0;
+      padding: 10px 12px; cursor: pointer;
+      box-shadow: 0 0 var(--glow-btn) rgba(249, 125, 21, 0.22);
+      pointer-events: none; opacity: 0;
+      transition: opacity .3s ease, background .15s, color .15s;
+    }
+    #reservoirBack:hover { background: rgba(249, 125, 21, 0.85); color: #0a0612; }
+    body.reservoir #reservoirBack { opacity: 1; pointer-events: auto; }
+    body.reservoir.project-open #reservoirBack { opacity: 0; pointer-events: none; }
+
+    /* ---- Reservoir Mode ---- */
+    #field { transition: filter 1.2s ease; }
+    body.reservoir #field {
+      filter: saturate(2.4) contrast(1.2) brightness(1.1);
+    }
+    #grain {
+      position: fixed; inset: 0; z-index: 1;
+      width: 100vw; height: 100vh;
+      mix-blend-mode: overlay;
+      opacity: 0; pointer-events: none;
+      transition: opacity 1s ease;
+      image-rendering: pixelated;
+    }
+    body.reservoir #grain { opacity: 0.5; }
+    body.reservoir .stage   { opacity: 0; pointer-events: none; }
+    body.reservoir .controls { opacity: 0; pointer-events: none; }
+
     /* ---- Thorne Mode: fade out the hero chrome, but KEEP the Physics toggle ----
        so the sidebar can still be opened while admiring the simulation. */
     body.thorne .stage { opacity: 0; pointer-events: none; }
@@ -310,6 +461,7 @@
 </head>
 <body>
   <canvas id="field"></canvas>
+  <canvas id="grain"></canvas>
 
   <!-- Foreground UI: retro pixel headline + buttons, centered over the black hole. -->
   <div class="stage">
@@ -319,7 +471,7 @@
     </h1>
     <nav class="actions">
       <button class="btn" id="aboutBtn">About Me</button>
-      <a class="btn" href="#projects">Project Reservoir</a>
+      <button class="btn" id="reservoirBtn">Project Reservoir</button>
     </nav>
   </div>
 
@@ -426,6 +578,30 @@ shadow radius  = 3√3 / 2 ≈ 2.598 rs</code>
       </div>
     </div>
   </div>
+
+  <!-- Reservoir project grid -->
+  <div id="reservoir-projects">
+    <div class="proj-card" data-project="rocketengine">
+      <div class="proj-card-title">Rocket<br>Engine<br>Validator</div>
+      <div class="proj-card-tag">Propulsion · Isentropic Flow</div>
+    </div>
+  </div>
+
+  <!-- Project viewer panel -->
+  <div id="project-viewer" aria-hidden="true">
+    <div id="proj-topbar">
+      <h2 id="proj-title"></h2>
+      <button id="proj-viewer-close">&#8592; Back to Reservoir</button>
+    </div>
+    <div id="proj-desc-box">
+      <p id="proj-desc"></p>
+    </div>
+    <div id="proj-iframe-wrap">
+      <iframe id="proj-iframe" src="" title="Project tool" frameborder="0" allowtransparency="true"></iframe>
+    </div>
+  </div>
+
+  <button id="reservoirBack" aria-label="Back to main screen">&#8592; Back</button>
 
   <div class="exit-hint">Thorne Mode — press Esc or click to exit</div>
 
@@ -650,6 +826,35 @@ let statsOn = false;
 let fpsAvg = 60, lastT = performance.now(), lastStatT = 0;
 let telElev = 0, telTilt = 0, telCamBelow = false;
 
+// ---- Reservoir Mode state (must be declared before frame()) ----
+let reservoirTarget = 0, reservoirT = 0;
+
+const grainCanvas = document.getElementById("grain");
+const grainCtx    = grainCanvas.getContext("2d");
+grainCanvas.width = 256; grainCanvas.height = 256;
+const grainImg    = grainCtx.createImageData(256, 256);
+
+function drawGrain(intensity) {
+  const d = grainImg.data;
+  const scale = Math.min(intensity, 1);
+  for (let i = 0; i < d.length; i += 4) {
+    const v = (Math.random() * 255 * scale * 0.55) | 0;
+    d[i]   = v;
+    d[i+1] = (v * 0.55) | 0;
+    d[i+2] = (v * 0.22) | 0;
+    d[i+3] = 255;
+  }
+  grainCtx.putImageData(grainImg, 0, 0);
+}
+
+function setReservoir(on) {
+  reservoirTarget = on ? 1 : 0;
+  document.body.classList.toggle("reservoir", on);
+  document.querySelector(".exit-hint").textContent = on
+    ? "Project Reservoir — press Esc or click to exit"
+    : "Thorne Mode — press Esc or click to exit";
+}
+
 function frame(now) {
   const t = now * 0.001;
   const asp = W / H;
@@ -667,6 +872,8 @@ function frame(now) {
   const beam = CONFIG.beam, ringGlow = CONFIG.ringGlow, spin = CONFIG.spin;
   const bgGlow = CONFIG.bgGlow, bgScroll = CONFIG.bgScroll;
   const maxSteps = CONFIG.steps, cw = cellW, chh = cellH;
+  reservoirT += (reservoirTarget - reservoirT) * 0.025;
+  const rT = reservoirT;
   const escapeR = camDist * 1.3;
   const bMissSq = (diskOut * 1.25) * (diskOut * 1.25);   // impact param beyond which a ray misses everything
 
@@ -748,7 +955,7 @@ function frame(now) {
 
       // Fast path: rays passing well outside the disk barely bend and can't be
       // captured — skip the integration and treat them as straight background.
-      const steps = h2 > bMissSq ? 0 : maxSteps;
+      const steps = h2 > bMissSq ? 0 : Math.round(maxSteps * (1 - rT));
       if (steps === 0) rmin = Math.sqrt(h2);
 
       for (let s = 0; s < steps; s++) {
@@ -819,9 +1026,9 @@ function frame(now) {
 
         const amb = fbm((azi + 3) * noiseScale, (el + 3) * noiseScale, t * drift, octaves);
         const dr = rmin - 1.5;                                // photon sphere ~ 1.5 Rs
-        const rg = ringGlow * Math.exp(-dr * dr / 0.4);       // photon-ring halo
+        const rg = ringGlow * (1 - rT) * Math.exp(-dr * dr / 0.4);       // photon-ring halo
         // Always-rendered, dim field: every escaping ray paints faint streaming code.
-        const b = ambLUT[(amb * 1023) | 0] * bgGlow + rg;
+        const b = ambLUT[(amb * 1023) | 0] * (bgGlow * (1 + rT * 1.5)) + rg;
         lvl = b * levels | 0; if (lvl < 0) lvl = 0; else if (lvl > levels) lvl = levels;
 
         const tx = ((azi / TWO_PI + 0.5) * 200 + t * bgScroll) | 0;
@@ -843,6 +1050,9 @@ function frame(now) {
 
   // Push telemetry to the DOM at most ~5x/sec (never per-frame) and only while open.
   if (statsOn && now - lastStatT > 200) { updateTelem(nCap, nDisk, nBg); lastStatT = now; }
+
+  // Draw warm grain overlay while in reservoir mode.
+  if (rT > 0.01) drawGrain(rT);
 
   // Render continuously — never pause, even when the tab is unfocused/backgrounded.
   requestAnimationFrame(frame);
@@ -879,6 +1089,43 @@ function setAbout(open) {
   if (open) $("about-close").focus();
 }
 $("aboutBtn").addEventListener("click", () => setAbout(true));
+$("reservoirBtn").addEventListener("click", () => setReservoir(true));
+$("reservoirBack").addEventListener("click", () => setReservoir(false));
+
+// ---- Project viewer ----
+const PROJECTS = {
+  rocketengine: {
+    title: "Rocket Engine Performance Validator",
+    desc: `An isentropic flow analysis tool that back-calculates nozzle geometry from manufacturer spec sheets and validates against first-principles thermodynamics. <span>Defaults to the SpaceX Merlin 1D.</span> Solves for exit Mach via bisection, then plots thrust across the full altitude envelope.`,
+    src: "rocketengine_validation.html"
+  }
+};
+
+const projectViewer = $("project-viewer");
+const projIframe    = $("proj-iframe");
+
+function openProject(key) {
+  const p = PROJECTS[key];
+  if (!p) return;
+  reservoirT = reservoirTarget = 1;   // snap black hole fully off before tool loads
+  $("proj-title").textContent  = p.title;
+  $("proj-desc").innerHTML     = p.desc;
+  projIframe.src               = p.src;
+  projectViewer.classList.add("open");
+  projectViewer.setAttribute("aria-hidden", "false");
+  document.body.classList.add("project-open");
+}
+function closeProject() {
+  projectViewer.classList.remove("open");
+  projectViewer.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("project-open");
+  projIframe.src = "";
+}
+
+$("proj-viewer-close").addEventListener("click", closeProject);
+document.querySelectorAll(".proj-card").forEach(card => {
+  card.addEventListener("click", () => openProject(card.dataset.project));
+});
 $("about-close").addEventListener("click", () => setAbout(false));
 aboutOverlay.addEventListener("click", e => { if (e.target === aboutOverlay) setAbout(false); });
 
@@ -901,12 +1148,16 @@ thorneBtn.addEventListener("click", () => setThorne(true));
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (aboutOverlay.classList.contains("open")) { setAbout(false); return; }
+  if (projectViewer.classList.contains("open")) { closeProject(); return; }
+  if (document.body.classList.contains("reservoir")) { setReservoir(false); return; }
   if (document.body.classList.contains("thorne")) setThorne(false);
   if (sidebar.classList.contains("open")) setSidebar(false);
 });
 // In Thorne mode, clicking the simulation exits — but clicks on the Physics
 // button or inside the sidebar must NOT exit.
 document.addEventListener("click", e => {
+  if (document.body.classList.contains("reservoir") &&
+      !e.target.closest(".controls") && !e.target.closest(".sidebar") && !e.target.closest(".stage") && !e.target.closest("#project-viewer") && !e.target.closest("#reservoir-projects")) { setReservoir(false); return; }
   if (document.body.classList.contains("thorne") &&
       !e.target.closest(".controls") && !e.target.closest(".sidebar")) setThorne(false);
 });

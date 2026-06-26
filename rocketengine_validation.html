@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rocket Engine Performance Validator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Consolas&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --orange: #f97d15;
+            --amber:  #ffd24a;
+            --ink:    #e9f1ff;
+            --muted:  #8a93ad;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'JetBrains Mono', monospace;
+            background: transparent;
+            overflow-x: hidden;
+            color: var(--ink);
+        }
+        h2 {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--amber);
+            letter-spacing: 0.5px;
+        }
+        label {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--muted);
+            font-size: 13px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+        }
+        input[type=number] {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 15px;
+            background: rgba(0, 0, 0, 0.45);
+            border: 1px solid rgba(249, 125, 21, 0.25);
+            color: var(--ink);
+            border-radius: 4px;
+            padding: 9px 12px;
+            width: 100%;
+            margin-top: 4px;
+            outline: none;
+            transition: border-color 0.15s;
+            -moz-appearance: textfield;
+        }
+        input[type=number]:focus { border-color: var(--orange); box-shadow: 0 0 0 2px rgba(249, 125, 21, 0.2); }
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+        #calculateBtn {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 15px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            width: 100%;
+            margin-top: 1.5rem;
+            padding: 12px 16px;
+            background: var(--orange);
+            color: #0a0612;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            box-shadow: 4px 4px 0 #000, 0 0 16px rgba(249, 125, 21, 0.3);
+            transition: transform 0.05s steps(2), box-shadow 0.05s steps(2), background 0.1s;
+        }
+        #calculateBtn:hover  { background: var(--amber); transform: translate(2px, 2px); box-shadow: 2px 2px 0 #000, 0 0 16px rgba(249, 125, 21, 0.3); }
+        #calculateBtn:active { transform: translate(4px, 4px); box-shadow: 0 0 0 #000; }
+
+        .glass-panel {
+            background: rgba(5, 3, 10, 0.55);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(249, 125, 21, 0.18);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.06);
+            position: relative;
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .glass-panel:hover { border-color: rgba(249, 125, 21, 0.35); }
+        .glass-panel::before {
+            content: '';
+            position: absolute; top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: radial-gradient(circle 250px at var(--mouse-x, -999px) var(--mouse-y, -999px), rgba(249, 125, 21, 0.08), transparent 80%);
+            pointer-events: none; z-index: 0; opacity: 0;
+            transition: opacity 0.3s ease-out;
+        }
+        .glass-panel:hover::before { opacity: 1; }
+        .glass-panel > * { position: relative; z-index: 1; }
+
+        .panel-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: var(--orange);
+            border-bottom: 1px solid rgba(249, 125, 21, 0.2);
+            padding-bottom: 10px;
+            margin-bottom: 16px;
+        }
+
+        #validation-output p {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            color: var(--ink);
+            padding: 4px 0;
+        }
+        #validation-output strong { color: var(--muted); font-weight: 500; }
+        #validation-output .val-good  { color: #4ade80; }
+        #validation-output .val-warn  { color: var(--amber); }
+        #validation-output .val-bad   { color: #f87171; }
+
+        table { width: 100%; font-family: 'JetBrains Mono', monospace; font-size: 14px; text-align: left; border-collapse: collapse; }
+        thead th {
+            font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase;
+            color: var(--muted); background: rgba(0,0,0,0.4);
+            padding: 10px 16px; position: sticky; top: 0;
+            backdrop-filter: blur(6px);
+        }
+        tbody tr { border-bottom: 1px solid rgba(255,255,255,0.06); transition: background 0.1s; }
+        tbody tr:hover { background: rgba(249,125,21,0.07); }
+        tbody td { padding: 9px 16px; color: var(--ink); }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(249,125,21,0.3); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--orange); }
+    </style>
+</head>
+<body class="bg-transparent min-h-screen" style="padding: 1.5rem 0;">
+
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <main id="main-content" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+            <!-- Left Column: Controls -->
+            <div class="lg:col-span-1 space-y-8">
+                <div class="glass-panel rounded-lg p-6">
+                    <div class="panel-title">Engine Parameters</div>
+                    <div class="space-y-4">
+                        <div><label for="F_sl_spec">Sea-Level Thrust (kN)</label><input type="number" id="F_sl_spec" value="845"></div>
+                        <div><label for="Isp_sl_spec">Sea-Level Isp (s)</label><input type="number" id="Isp_sl_spec" value="282"></div>
+                        <div><label for="pt">Chamber Pressure (MPa)</label><input type="number" id="pt" value="9.7"></div>
+                        <div><label for="Tt">Chamber Temp. (K)</label><input type="number" id="Tt" value="3480"></div>
+                        <div><label for="gamma">Specific Heat Ratio (γ)</label><input type="number" id="gamma" value="1.21" step="0.01"></div>
+                        <div><label for="R">Gas Constant (J/kg·K)</label><input type="number" id="R" value="355.4"></div>
+                        <div><label for="Ae_div_A_star">Area Ratio (Ae/A*)</label><input type="number" id="Ae_div_A_star" value="16.0"></div>
+                    </div>
+                    <button id="calculateBtn">Calculate &amp; Plot</button>
+                </div>
+                <div class="glass-panel rounded-lg p-6">
+                    <div class="panel-title">Validation Results</div>
+                    <div id="validation-output" class="space-y-1"></div>
+                </div>
+            </div>
+
+            <!-- Right Column: Outputs -->
+            <div class="lg:col-span-2 space-y-8">
+                <div class="glass-panel rounded-lg p-6">
+                    <div class="panel-title">Thrust vs. Altitude</div>
+                    <div class="h-80"><canvas id="thrustChart"></canvas></div>
+                </div>
+                <div class="glass-panel rounded-lg p-6">
+                    <div class="panel-title">Data Table</div>
+                    <div class="overflow-x-auto" style="max-height: 20rem;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Altitude (km)</th>
+                                    <th>Amb. Pressure (Pa)</th>
+                                    <th>Thrust (kN)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dataTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- Interactive Glass Effect ---
+        document.querySelectorAll('.glass-panel').forEach(panel => {
+            panel.addEventListener('mousemove', e => {
+                const rect = panel.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                panel.style.setProperty('--mouse-x', `${x}px`);
+                panel.style.setProperty('--mouse-y', `${y}px`);
+            });
+             panel.addEventListener('mouseleave', () => {
+                panel.style.setProperty('--mouse-x', `-999px`);
+                panel.style.setProperty('--mouse-y', `-999px`);
+            });
+        });
+
+        // --- Rocket Engine Validator Class ---
+        class RocketEngineValidator {
+            constructor(F_sl_spec, Isp_sl_spec, pt, Tt, gamma, R, Ae_div_A_star, p0 = 101325) {
+                this.G0 = 9.80665;
+                this.F_sl_spec = F_sl_spec;
+                this.Isp_sl_spec = Isp_sl_spec;
+                this.p0 = p0;
+                this.pt = pt;
+                this.Tt = Tt;
+                this.gamma = gamma;
+                this.R = R;
+                this.Ae_div_A_star = Ae_div_A_star;
+                this.mdot_true = this.F_sl_spec / (this.Isp_sl_spec * this.G0);
+            }
+
+            _exit_mach_function(Me) {
+                const g = this.gamma;
+                const lhs = 1 / Me;
+                const bracket_term = (2 / (g + 1)) * (1 + ((g - 1) / 2) * Me ** 2);
+                const rhs = bracket_term ** ((g + 1) / (2 * (g - 1)));
+                return lhs * rhs - this.Ae_div_A_star;
+            }
+
+            _solve_for_exit_mach(low_Me = 1.0, high_Me = 10.0, tolerance = 1e-9, max_iter = 1000) {
+                for (let i = 0; i < max_iter; i++) {
+                    const mid_Me = (low_Me + high_Me) / 2;
+                    const f_mid = this._exit_mach_function(mid_Me);
+                    const f_low = this._exit_mach_function(low_Me);
+
+                    if (Math.abs(f_mid) < tolerance) {
+                        return mid_Me;
+                    }
+                    if (f_low * f_mid < 0) {
+                        high_Me = mid_Me;
+                    } else {
+                        low_Me = mid_Me;
+                    }
+                }
+                console.error("Bisection method did not converge for Exit Mach Number.");
+                return null;
+            }
+
+            calculate_performance() {
+                const term1 = this.pt / Math.sqrt(this.Tt);
+                const term2 = Math.sqrt(this.gamma / this.R);
+                const term3 = ((this.gamma + 1) / 2) ** (-(this.gamma + 1) / (2 * (this.gamma - 1)));
+                const mdot_div_A_star = term1 * term2 * term3;
+
+                const Me = this._solve_for_exit_mach();
+                if (Me === null) return null;
+
+                const Te = this.Tt / (1 + ((this.gamma - 1) / 2) * Me ** 2);
+                const pe = this.pt * (1 + ((this.gamma - 1) / 2) * Me ** 2) ** (-this.gamma / (this.gamma - 1));
+                const Ve = Me * Math.sqrt(this.gamma * this.R * Te);
+
+                const thrust_div_A_star = mdot_div_A_star * Ve + (pe - this.p0) * this.Ae_div_A_star;
+                const A_star_calc = this.F_sl_spec / thrust_div_A_star;
+                const mdot_calc = mdot_div_A_star * A_star_calc;
+                const Ae_calc = this.Ae_div_A_star * A_star_calc;
+
+                const F_calc = mdot_calc * Ve + (pe - this.p0) * Ae_calc;
+
+                return {
+                    "mdot_calc": mdot_calc,
+                    "mdot_true": this.mdot_true,
+                    "Me": Me, "pe": pe, "Te": Te, "Ve": Ve,
+                    "A_star_calc": A_star_calc, "Ae_calc": Ae_calc, "F_calc": F_calc
+                };
+            }
+        }
+
+        // --- UI Update and Charting Logic ---
+        const altitudeMap = {
+            alt: [0, 5, 10, 15, 20, 30, 40, 50, 60, 70, 80, 90, 100],
+            ambient_pressure: [101325, 54048.2, 26500, 12111.8, 5500, 1200, 300, 80, 20, 6, 1, 0.2, 0]
+        };
+
+        let thrustChart;
+
+        function updateUI() {
+            const F_sl_spec = parseFloat(document.getElementById('F_sl_spec').value) * 1000;
+            const Isp_sl_spec = parseFloat(document.getElementById('Isp_sl_spec').value);
+            const pt = parseFloat(document.getElementById('pt').value) * 1e6;
+            const Tt = parseFloat(document.getElementById('Tt').value);
+            const gamma = parseFloat(document.getElementById('gamma').value);
+            const R = parseFloat(document.getElementById('R').value);
+            const Ae_div_A_star = parseFloat(document.getElementById('Ae_div_A_star').value);
+            
+            const validator = new RocketEngineValidator(F_sl_spec, Isp_sl_spec, pt, Tt, gamma, R, Ae_div_A_star);
+            const performance = validator.calculate_performance();
+
+            if (!performance) {
+                document.getElementById('validation-output').innerHTML = `<p class="text-red-400">Calculation failed. Check parameters.</p>`;
+                return;
+            }
+            
+            const { mdot_calc, mdot_true } = performance;
+            const error = ((mdot_calc - mdot_true) / mdot_true) * 100;
+            const accuracy = 100 - Math.abs(error);
+            const validationDiv = document.getElementById('validation-output');
+            validationDiv.innerHTML = `
+                <p><strong>'True' Ṁ:</strong> ${mdot_true.toFixed(2)} kg/s</p>
+                <p><strong>Calc. Ṁ:</strong> ${mdot_calc.toFixed(2)} kg/s</p>
+                <p class="${accuracy >= 95 ? 'val-good' : 'val-warn'}"><strong>Accuracy:</strong> ${accuracy.toFixed(2)}%</p>
+                <p class="${Math.abs(error) <= 5 ? 'val-good' : 'val-bad'}"><strong>Error:</strong> ${error.toFixed(2)}%</p>
+            `;
+
+            const { Ve, pe, Ae_calc } = performance;
+            const thrust_calculation = (ambient_pr) => (mdot_calc * Ve + (pe - ambient_pr) * Ae_calc) / 1000;
+            const thrustData_kN = altitudeMap.ambient_pressure.map(p0 => thrust_calculation(p0));
+
+            const tableBody = document.getElementById('dataTableBody');
+            tableBody.innerHTML = '';
+            altitudeMap.alt.forEach((alt, index) => {
+                const row = `
+                    <tr class="border-b border-white/10 hover:bg-white/10">
+                        <td class="px-6 py-3">${alt}</td>
+                        <td class="px-6 py-3">${altitudeMap.ambient_pressure[index].toLocaleString()}</td>
+                        <td class="px-6 py-3 font-medium">${thrustData_kN[index].toFixed(2)}</td>
+                    </tr>
+                `;
+                tableBody.innerHTML += row;
+            });
+            
+            const ctx = document.getElementById('thrustChart').getContext('2d');
+            if (thrustChart) thrustChart.destroy();
+            
+            Chart.defaults.font.family = "'JetBrains Mono', monospace";
+            thrustChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: altitudeMap.alt,
+                    datasets: [{
+                        label: 'Thrust (kN)',
+                        data: thrustData_kN,
+                        borderColor: '#f97d15',
+                        backgroundColor: 'rgba(249, 125, 21, 0.12)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.1,
+                        pointBackgroundColor: '#ffd24a',
+                        pointBorderColor: '#f97d15',
+                        pointRadius: 4,
+                        pointHoverBackgroundColor: '#ffd24a',
+                        pointHoverBorderColor: '#fff',
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: { display: true, text: 'Altitude (km)', color: '#8a93ad', font: { size: 11 } },
+                            grid: { color: 'rgba(255, 255, 255, 0.06)' },
+                            ticks: { color: '#8a93ad', font: { size: 11 } }
+                        },
+                        y: {
+                            title: { display: true, text: 'Thrust (kN)', color: '#8a93ad', font: { size: 11 } },
+                            grid: { color: 'rgba(255, 255, 255, 0.06)' },
+                            ticks: { color: '#8a93ad', font: { size: 11 } },
+                            min: Math.min(...thrustData_kN) - 20
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: 'rgba(5, 3, 10, 0.92)',
+                            borderColor: 'rgba(249, 125, 21, 0.4)',
+                            borderWidth: 1,
+                            titleColor: '#ffd24a',
+                            bodyColor: '#e9f1ff',
+                            titleFont: { family: "'JetBrains Mono', monospace", size: 12 },
+                            bodyFont: { family: "'JetBrains Mono', monospace", size: 12 },
+                            callbacks: {
+                                label: (context) => `Thrust: ${context.formattedValue} kN`
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // --- Initial Load ---
+        window.onload = () => {
+            updateUI();
+            document.getElementById('calculateBtn').addEventListener('click', updateUI);
+        };
+
+    </script>
+</body>
+</html>
+
