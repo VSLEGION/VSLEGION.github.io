@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vaishanth Engineering Portfolio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg: #05030a;          /* deep space backdrop */
@@ -131,6 +134,164 @@
     .eqs .eq code { display: block; color: #d7e3ff; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
     .eqs .eq code .hot { color: #ffd24a; }
 
+    /* ---- About Me modal ---- */
+    #about-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 20;
+      align-items: center; justify-content: center;
+    }
+    #about-overlay.open { display: flex; }
+
+    /* CRT dim layer */
+    #about-overlay::before {
+      content: "";
+      position: absolute; inset: 0;
+      background: rgba(5, 3, 10, 0.82);
+      animation: crt-flicker 0.12s steps(1) forwards;
+    }
+    /* Scanlines */
+    #about-overlay::after {
+      content: "";
+      position: absolute; inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 3px,
+        rgba(0, 0, 0, 0.28) 3px,
+        rgba(0, 0, 0, 0.28) 4px
+      );
+      pointer-events: none;
+    }
+
+    @keyframes crt-flicker {
+      0%   { opacity: 0.3; }
+      40%  { opacity: 0.7; }
+      60%  { opacity: 0.5; }
+      80%  { opacity: 0.9; }
+      100% { opacity: 1; }
+    }
+
+    #about-panel {
+      position: relative; z-index: 21;
+      display: grid;
+      grid-template-columns: 1fr 260px;
+      gap: 2rem;
+      width: min(900px, 92vw);
+      max-height: 80vh;
+      /* Liquid glass core */
+      background: linear-gradient(
+        135deg,
+        rgba(255, 255, 255, 0.10) 0%,
+        rgba(180, 160, 255, 0.07) 40%,
+        rgba(249, 125, 21, 0.06) 100%
+      );
+      backdrop-filter: blur(28px) saturate(1.6) brightness(1.15);
+      -webkit-backdrop-filter: blur(28px) saturate(1.6) brightness(1.15);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-bottom-color: rgba(255, 255, 255, 0.06);
+      border-right-color: rgba(255, 255, 255, 0.06);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        inset 1px 0 0 rgba(255, 255, 255, 0.10),
+        0 8px 48px rgba(0, 0, 0, 0.55),
+        0 0 0 1px rgba(0, 0, 0, 0.35),
+        0 0 60px rgba(249, 125, 21, 0.12);
+      border-radius: 4px;
+      padding: 2rem;
+      overflow-y: auto;
+      /* Pixel open animation: scale up in hard steps */
+      animation: pixel-open 0.18s steps(6) forwards;
+      transform-origin: center center;
+    }
+
+    @keyframes pixel-open {
+      from { transform: scale(0.4); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+
+    #about-panel .about-text {
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      color: #d7e3ff;
+      font-size: clamp(11px, 1.3vw, 14px);
+      line-height: 1.75;
+      overflow-y: auto;
+    }
+
+    #about-panel .about-text h2 {
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      font-size: clamp(10px, 1.4vw, 14px);
+      color: #ffd24a;
+      margin: 0 0 1.2rem;
+      letter-spacing: 1px;
+      text-shadow: 3px 3px 0 #000, 0 0 12px rgba(255, 210, 74, 0.5);
+    }
+
+    #about-panel .about-text p { margin: 0 0 1rem; }
+    #about-panel .about-text p:last-child { margin-bottom: 0; }
+
+    /* Orange accent for inline highlights */
+    #about-panel .about-text .hl { color: #f97d15; }
+    #about-panel .about-text .hl2 { color: #ffd24a; }
+
+    #about-panel .about-photo {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    #about-panel .photo-frame {
+      width: 100%;
+      aspect-ratio: 3 / 4;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.15),
+        0 4px 24px rgba(0, 0, 0, 0.4),
+        0 0 18px rgba(249, 125, 21, 0.15);
+      border-radius: 3px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, 0.04);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      display: flex; align-items: center; justify-content: center;
+      color: rgba(255,255,255,0.2);
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      font-size: 9px;
+      text-align: center;
+      line-height: 1.6;
+    }
+
+    #about-panel .photo-frame img {
+      width: 100%; height: 100%;
+      object-fit: cover; object-position: top;
+      display: block;
+    }
+
+    #about-panel .photo-caption {
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      font-size: 8px;
+      color: #8a93ad;
+      letter-spacing: 1px;
+      text-align: center;
+    }
+
+    #about-close {
+      position: absolute; top: 12px; right: 14px;
+      background: none; border: 0;
+      color: #8a93ad; font-size: 22px; line-height: 1;
+      cursor: pointer; z-index: 22;
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      transition: color 0.1s steps(2);
+    }
+    #about-close:hover { color: #ffd24a; }
+
+    /* Collapse two-column to single-column on small screens */
+    @media (max-width: 600px) {
+      #about-panel { grid-template-columns: 1fr; }
+      #about-panel .about-photo { flex-direction: row; align-items: flex-start; }
+      #about-panel .photo-frame { width: 120px; aspect-ratio: 3 / 4; flex-shrink: 0; }
+    }
+
     /* ---- Thorne Mode: fade out the hero chrome, but KEEP the Physics toggle ----
        so the sidebar can still be opened while admiring the simulation. */
     body.thorne .stage { opacity: 0; pointer-events: none; }
@@ -157,7 +318,7 @@
       <span class="family">Srinivasan</span>
     </h1>
     <nav class="actions">
-      <a class="btn" href="#about">About Me</a>
+      <button class="btn" id="aboutBtn">About Me</button>
       <a class="btn" href="#projects">Project Reservoir</a>
     </nav>
   </div>
@@ -243,6 +404,28 @@ shadow radius  = 3√3 / 2 ≈ 2.598 rs</code>
       </div>
     </details>
   </aside>
+
+  <!-- About Me modal -->
+  <div id="about-overlay" role="dialog" aria-modal="true" aria-labelledby="about-title">
+    <div id="about-panel">
+      <button id="about-close" aria-label="Close">✕</button>
+
+      <div class="about-text">
+        <h2 id="about-title">About Me</h2>
+        <p>I've always been the kind of kid who wanted to know what happens if you push something just a little too far. What a flame does right before it tips into chaos. What ice actually does to a wing in the middle of a flight. How heat moves through a material nobody else bothered to model properly. That curiosity never really grew up. It just got <span class="hl2">better tools</span>.</p>
+        <p>These days I build <span class="hl">simulations of weird, specific physical phenomena</span>, mostly because watching something almost break in a controlled way is, to me, deeply satisfying. And the same instinct shows up everywhere else in my life, only smaller. I'll spend an entire evening untangling one stubborn bug in a game I'm designing, or re-rendering a single VFX shot for the eighth time because the light still isn't sitting quite right, or staring down a chessboard fully convinced that this is the game I finally win. It never is, but I appreciate my own optimism.</p>
+        <p>I grew up gaming and never stopped. I play music when my brain needs to do something other than physics for a while. I lift weights mostly so I have a good reason to eat more. None of it is especially serious. It's all just the same quiet itch, really. <span class="hl2">Build the small weird world, push on it, and see what it does.</span></p>
+      </div>
+
+      <div class="about-photo">
+        <div class="photo-frame">
+          <!-- Replace src with your photo path, e.g. src="img/photo.jpg" -->
+          <span>PHOTO<br>PLACEHOLDER</span>
+        </div>
+        <div class="photo-caption">Vaishanth Srinivasan</div>
+      </div>
+    </div>
+  </div>
 
   <div class="exit-hint">Thorne Mode — press Esc or click to exit</div>
 
@@ -688,6 +871,17 @@ function updateTelem(nCap, nDisk, nBg) {
   $("t_steps").textContent = CONFIG.steps;
 }
 
+// ---- About Me modal ----
+const aboutOverlay = $("about-overlay"), aboutPanel = $("about-panel");
+function setAbout(open) {
+  aboutOverlay.classList.toggle("open", open);
+  aboutOverlay.setAttribute("aria-hidden", String(!open));
+  if (open) $("about-close").focus();
+}
+$("aboutBtn").addEventListener("click", () => setAbout(true));
+$("about-close").addEventListener("click", () => setAbout(false));
+aboutOverlay.addEventListener("click", e => { if (e.target === aboutOverlay) setAbout(false); });
+
 const sidebar = $("sidebar"), physBtn = $("physBtn"), thorneBtn = $("thorneBtn");
 function setSidebar(open) {
   statsOn = open;                         // gates the per-cell counters in frame()
@@ -706,6 +900,7 @@ $("sbClose").addEventListener("click", () => setSidebar(false));
 thorneBtn.addEventListener("click", () => setThorne(true));
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
+  if (aboutOverlay.classList.contains("open")) { setAbout(false); return; }
   if (document.body.classList.contains("thorne")) setThorne(false);
   if (sidebar.classList.contains("open")) setSidebar(false);
 });
