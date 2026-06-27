@@ -136,40 +136,20 @@
 
     /* ---- About Me modal ---- */
     #about-overlay {
-      display: none;
       position: fixed; inset: 0; z-index: 20;
-      align-items: center; justify-content: center;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.5s ease;
     }
-    #about-overlay.open { display: flex; }
-
-    /* CRT dim layer */
-    #about-overlay::before {
-      content: "";
-      position: absolute; inset: 0;
-      background: rgba(5, 3, 10, 0.82);
-      animation: crt-flicker 0.12s steps(1) forwards;
-    }
-    /* Scanlines */
-    #about-overlay::after {
-      content: "";
-      position: absolute; inset: 0;
-      background: repeating-linear-gradient(
-        to bottom,
-        transparent 0px,
-        transparent 3px,
-        rgba(0, 0, 0, 0.28) 3px,
-        rgba(0, 0, 0, 0.28) 4px
-      );
-      pointer-events: none;
+    #about-overlay.open {
+      opacity: 1; pointer-events: auto;
     }
 
-    @keyframes crt-flicker {
-      0%   { opacity: 0.3; }
-      40%  { opacity: 0.7; }
-      60%  { opacity: 0.5; }
-      80%  { opacity: 0.9; }
-      100% { opacity: 1; }
-    }
+    /* Fade out stage + controls when about is open */
+    body.about-open .stage    { opacity: 0; pointer-events: none; transition: opacity 0.4s ease; }
+    body.about-open .controls { opacity: 0; pointer-events: none; transition: opacity 0.4s ease; }
+    .stage    { transition: opacity 0.4s ease; }
+    .controls { transition: opacity 0.4s ease; }
 
     #about-panel {
       position: relative; z-index: 21;
@@ -1086,7 +1066,14 @@ const aboutOverlay = $("about-overlay"), aboutPanel = $("about-panel");
 function setAbout(open) {
   aboutOverlay.classList.toggle("open", open);
   aboutOverlay.setAttribute("aria-hidden", String(!open));
-  if (open) $("about-close").focus();
+  if (open) {
+    reservoirTarget = 1;               // lerp black hole out
+    document.body.classList.add("about-open");
+    $("about-close").focus();
+  } else {
+    document.body.classList.remove("about-open");
+    reservoirTarget = 0;               // lerp black hole back in
+  }
 }
 $("aboutBtn").addEventListener("click", () => setAbout(true));
 $("reservoirBtn").addEventListener("click", () => setReservoir(true));
