@@ -282,6 +282,8 @@
       transition: opacity .5s ease .2s;
     }
     body.reservoir #reservoir-projects { opacity: 1; pointer-events: auto; }
+    /* scatter / reassemble are driven by the Web Animations API (see JS) */
+    body.project-open #reservoir-projects { pointer-events: none; }
 
     .proj-card {
       width: 240px;
@@ -317,23 +319,42 @@
       color: #f97d15; opacity: .8;
     }
 
+    /* ---- Placeholder (not yet wired) cards ---- */
+    .proj-card.placeholder {
+      cursor: not-allowed;
+      border-color: #5a4a6e;
+      box-shadow: 6px 6px 0 #000, 0 0 18px rgba(120,100,150,0.18);
+      opacity: 0.72;
+    }
+    .proj-card.placeholder:hover {
+      transform: translate(-2px,-2px);
+      border-color: #8a93ad;
+      box-shadow: 8px 8px 0 #000, 0 0 24px rgba(138,147,173,0.3);
+    }
+    .proj-card.placeholder:active { transform: translate(-2px,-2px); }
+    .proj-card.placeholder .proj-card-title { color: #c7c2d6; text-shadow: 3px 3px 0 #000; }
+    .proj-card.placeholder .proj-card-tag   { color: #8a93ad; }
+    .proj-card-soon {
+      display: inline-block; margin-top: .8rem;
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      font-size: 8px; letter-spacing: 1px; text-transform: uppercase;
+      color: #0a0612; background: #8a93ad; padding: 5px 8px;
+    }
+
     /* ---- Project viewer panel ---- */
     #project-viewer {
       position: fixed; inset: 0; z-index: 10;
       display: flex; flex-direction: column;
       background: transparent;
       opacity: 0; pointer-events: none;
-      transform: scale(0.06);
+      transform: scale(0.2);
       transform-origin: center center;
-      transition: none;
+      /* smooth springy scale — eases both on open and close */
+      transition: transform .46s cubic-bezier(.16, 1, .3, 1), opacity .34s ease;
     }
     #project-viewer.open {
       opacity: 1; pointer-events: auto;
-      animation: proj-expand .28s steps(9) forwards;
-    }
-    @keyframes proj-expand {
-      from { transform: scale(0.06); opacity: 0.6; }
-      to   { transform: scale(1);    opacity: 1; }
+      transform: scale(1);
     }
 
     /* Translucent legibility layer behind the whole viewer */
@@ -568,6 +589,21 @@ shadow radius  = 3√3 / 2 ≈ 2.598 rs</code>
     <div class="proj-card" data-project="dora">
       <div class="proj-card-title">Dora<br>The<br>Pathfinder</div>
       <div class="proj-card-tag">A* Search · Fuel-Optimal UAV</div>
+    </div>
+    <div class="proj-card placeholder" aria-disabled="true">
+      <div class="proj-card-title">RDRE<br>CFD</div>
+      <div class="proj-card-tag">CFD Validation · Rotating Detonation Rocket Engine</div>
+      <span class="proj-card-soon">Coming Soon</span>
+    </div>
+    <div class="proj-card placeholder" aria-disabled="true">
+      <div class="proj-card-title">Th3rmoSand</div>
+      <div class="proj-card-tag">Thermal Simulation Sandbox</div>
+      <span class="proj-card-soon">Coming Soon</span>
+    </div>
+    <div class="proj-card placeholder" aria-disabled="true">
+      <div class="proj-card-title">Airfoil<br>Icing<br>CFD</div>
+      <div class="proj-card-tag">CFD Analysis · Icing on Airfoils</div>
+      <span class="proj-card-soon">Coming Soon</span>
     </div>
   </div>
 
@@ -1083,7 +1119,7 @@ function setAbout(open) {
     aboutPending = true;               // banner held until 50% faded (gated in frame loop)
     $("about-close").focus();
   } else {
-    reservoirLerp = 0.12;              // fade back in to match banner exit
+    reservoirLerp = 0.05;              // slower, gentle black-hole re-emergence on close
     aboutPending = false;
     aboutOverlay.classList.remove("open");
     document.body.classList.remove("about-open");
@@ -1110,6 +1146,58 @@ const PROJECTS = {
 
 const projectViewer = $("project-viewer");
 const projIframe    = $("proj-iframe");
+const reservoirProjects = $("reservoir-projects");
+
+// Web Animations API drives the scatter/reassemble so we get exact sequencing
+// and no class-swap opacity flicker.
+let cardAnims = [];
+const SCATTER_MS = 320, REASSEMBLE_MS = 460, OPEN_DELAY_MS = 170;
+
+function clearCardAnims() {
+  cardAnims.forEach(a => { try { a.cancel(); } catch (e) {} });   // cancel -> revert to base (normal)
+  cardAnims = [];
+}
+function activeCards() { return [...reservoirProjects.querySelectorAll(".proj-card")]; }
+
+// Returns a promise resolving once every card has finished flying apart.
+function scatterCards() {
+  clearCardAnims();
+  const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+  const proms = [];
+  activeCards().forEach(card => {
+    const r = card.getBoundingClientRect();
+    const vx = (r.left + r.width / 2) - cx, vy = (r.top + r.height / 2) - cy;
+    const mag = Math.hypot(vx, vy) || 1;
+    const d = 150 + Math.random() * 150;
+    const tx = Math.round(vx / mag * d);
+    const ty = Math.round(vy / mag * d - 80);            // upward bias, like rising ash
+    const rot = Math.round((Math.random() * 2 - 1) * 28);
+    card._scatter = { tx, ty, rot };                     // remember exact end-state for reassembly
+    const a = card.animate([
+      { transform: "translate(0,0) scale(1) rotate(0deg)", opacity: 1, filter: "blur(0px)" },
+      { opacity: 0, offset: 0.5 },                         // gone by halfway -> tab can open
+      { transform: `translate(${tx}px,${ty}px) scale(.35) rotate(${rot}deg)`, opacity: 0, filter: "blur(8px)" }
+    ], { duration: SCATTER_MS, delay: Math.random() * 30, easing: "cubic-bezier(.3,.7,.3,1)", fill: "forwards" });
+    cardAnims.push(a);
+    proms.push(a.finished.catch(() => {}));
+  });
+  return Promise.all(proms);
+}
+
+// Reassemble starts exactly from each card's scattered end-state -> no opacity flash.
+function reassembleCards() {
+  const fresh = [];
+  activeCards().forEach(card => {
+    const s = card._scatter || { tx: 0, ty: 0, rot: 0 };
+    const a = card.animate([
+      { transform: `translate(${s.tx}px,${s.ty}px) scale(.35) rotate(${s.rot}deg)`, opacity: 0, filter: "blur(8px)" },
+      { transform: "translate(0,0) scale(1) rotate(0deg)", opacity: 1, filter: "blur(0px)" }
+    ], { duration: REASSEMBLE_MS, delay: Math.random() * 60, easing: "cubic-bezier(.16,1,.3,1)", fill: "forwards" });
+    fresh.push(a);
+  });
+  cardAnims = cardAnims.concat(fresh);                   // newer anims win the composite
+  Promise.all(fresh.map(a => a.finished.catch(() => {}))).then(clearCardAnims);
+}
 
 function openProject(key) {
   const p = PROJECTS[key];
@@ -1117,21 +1205,28 @@ function openProject(key) {
   reservoirT = reservoirTarget = 1;   // snap black hole fully off before tool loads
   $("proj-title").textContent  = p.title;
   $("proj-desc").innerHTML     = p.desc;
-  projIframe.src               = p.src;
-  projectViewer.classList.add("open");
-  projectViewer.setAttribute("aria-hidden", "false");
+  projIframe.src               = p.src;            // tool loads in the background during scatter
   document.body.classList.add("project-open");
+  projectViewer.setAttribute("aria-hidden", "false");
+  // 1) scatter the cards, then 2) snap the tab open the moment they've faded
+  scatterCards();
+  setTimeout(() => {
+    if (document.body.classList.contains("project-open")) projectViewer.classList.add("open");
+  }, OPEN_DELAY_MS);
 }
 function closeProject() {
-  projectViewer.classList.remove("open");
+  projectViewer.classList.remove("open");          // tab scales back down first
   projectViewer.setAttribute("aria-hidden", "true");
   document.body.classList.remove("project-open");
-  projIframe.src = "";
+  setTimeout(() => { reassembleCards(); projIframe.src = ""; }, 180);  // then cards fly home
 }
 
 $("proj-viewer-close").addEventListener("click", closeProject);
 document.querySelectorAll(".proj-card").forEach(card => {
-  card.addEventListener("click", () => openProject(card.dataset.project));
+  card.addEventListener("click", () => {
+    if (card.classList.contains("placeholder")) return;   // not wired yet
+    openProject(card.dataset.project);
+  });
 });
 $("about-close").addEventListener("click", () => setAbout(false));
 aboutOverlay.addEventListener("click", e => { if (e.target === aboutOverlay) setAbout(false); });
