@@ -565,6 +565,10 @@ shadow radius  = 3√3 / 2 ≈ 2.598 rs</code>
       <div class="proj-card-title">Rocket<br>Engine<br>Validator</div>
       <div class="proj-card-tag">Propulsion · Isentropic Flow</div>
     </div>
+    <div class="proj-card" data-project="dora">
+      <div class="proj-card-title">Dora<br>The<br>Pathfinder</div>
+      <div class="proj-card-tag">A* Search · Fuel-Optimal UAV</div>
+    </div>
   </div>
 
   <!-- Project viewer panel -->
@@ -808,6 +812,8 @@ let telElev = 0, telTilt = 0, telCamBelow = false;
 
 // ---- Reservoir Mode state (must be declared before frame()) ----
 let reservoirTarget = 0, reservoirT = 0;
+let reservoirLerp = 0.025;   // gentle morph for reservoir; About Me bumps this up
+let aboutPending = false;    // banner waits until the black hole is 50% faded
 
 const grainCanvas = document.getElementById("grain");
 const grainCtx    = grainCanvas.getContext("2d");
@@ -828,6 +834,7 @@ function drawGrain(intensity) {
 }
 
 function setReservoir(on) {
+  reservoirLerp = 0.025;   // gentle morph
   reservoirTarget = on ? 1 : 0;
   document.body.classList.toggle("reservoir", on);
   document.querySelector(".exit-hint").textContent = on
@@ -852,7 +859,11 @@ function frame(now) {
   const beam = CONFIG.beam, ringGlow = CONFIG.ringGlow, spin = CONFIG.spin;
   const bgGlow = CONFIG.bgGlow, bgScroll = CONFIG.bgScroll;
   const maxSteps = CONFIG.steps, cw = cellW, chh = cellH;
-  reservoirT += (reservoirTarget - reservoirT) * 0.025;
+  reservoirT += (reservoirTarget - reservoirT) * reservoirLerp;
+  if (aboutPending && reservoirT >= 0.5) {   // reveal banner once black hole is half gone
+    aboutOverlay.classList.add("open");
+    aboutPending = false;
+  }
   const rT = reservoirT;
   const escapeR = camDist * 1.3;
   const bMissSq = (diskOut * 1.25) * (diskOut * 1.25);   // impact param beyond which a ray misses everything
@@ -1064,15 +1075,19 @@ function updateTelem(nCap, nDisk, nBg) {
 // ---- About Me modal ----
 const aboutOverlay = $("about-overlay"), aboutPanel = $("about-panel");
 function setAbout(open) {
-  aboutOverlay.classList.toggle("open", open);
   aboutOverlay.setAttribute("aria-hidden", String(!open));
   if (open) {
-    reservoirTarget = 1;               // lerp black hole out
+    reservoirLerp = 0.09;              // a tad slower black-hole fade
+    reservoirTarget = 1;               // black hole out
     document.body.classList.add("about-open");
+    aboutPending = true;               // banner held until 50% faded (gated in frame loop)
     $("about-close").focus();
   } else {
+    reservoirLerp = 0.12;              // fade back in to match banner exit
+    aboutPending = false;
+    aboutOverlay.classList.remove("open");
     document.body.classList.remove("about-open");
-    reservoirTarget = 0;               // lerp black hole back in
+    reservoirTarget = 0;               // black hole back in
   }
 }
 $("aboutBtn").addEventListener("click", () => setAbout(true));
@@ -1085,6 +1100,11 @@ const PROJECTS = {
     title: "Rocket Engine Performance Validator",
     desc: `An isentropic flow analysis tool that back-calculates nozzle geometry from manufacturer spec sheets and validates against first-principles thermodynamics. <span>Defaults to the SpaceX Merlin 1D.</span> Solves for exit Mach via bisection, then plots thrust across the full altitude envelope.`,
     src: "rocketengine_validation.html"
+  },
+  dora: {
+    title: "Dora — Fuel-Optimal Pathfinder",
+    desc: `A real-time A* path planner that searches a flight-corridor graph for the most fuel-efficient route between waypoints. <span>Models a ScanEagle UAV with a full drag-polar fuel burn.</span> Watch nodes get explored live as the frontier expands, routes detour around no-fly zones, and the optimal path locks in.`,
+    src: "dora_pathfinder.html"
   }
 };
 
