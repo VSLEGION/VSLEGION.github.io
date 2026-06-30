@@ -114,7 +114,7 @@
     }
     .ctrl-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
-    select, input[type=number] {
+    select, input[type=number], input[type=text] {
       font-family: 'JetBrains Mono', monospace; font-size: 13px;
       background: rgba(0,0,0,0.45);
       border: 1px solid rgba(249,125,21,0.25);
@@ -123,7 +123,7 @@
       transition: border-color 0.15s;
       -moz-appearance: textfield;
     }
-    select:focus, input[type=number]:focus {
+    select:focus, input[type=number]:focus, input[type=text]:focus {
       border-color: var(--orange); box-shadow: 0 0 0 2px rgba(249,125,21,0.2);
     }
     input[type=number]::-webkit-inner-spin-button,
@@ -134,6 +134,19 @@
       background: transparent; margin: 4px 0;
     }
     .range-val { color: var(--amber); font-size: 12px; }
+
+    /* collapsible sections */
+    details.fold { margin-bottom: 12px; border-top: 1px solid rgba(249,125,21,0.14); padding-top: 10px; }
+    details.fold > summary {
+      cursor: pointer; list-style: none;
+      font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+      color: var(--orange); display: flex; justify-content: space-between; align-items: center;
+    }
+    details.fold > summary::-webkit-details-marker { display: none; }
+    details.fold > summary::after { content: "▸"; color: var(--muted); transition: transform .2s ease; }
+    details.fold[open] > summary::after { transform: rotate(90deg); }
+    details.fold .fold-body { margin-top: 10px; }
+    .fold-hint { font-size: 10px; color: var(--muted); margin-bottom: 8px; }
 
     .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
     button.tool-btn {
@@ -167,15 +180,15 @@
     .telem .row .k { color: var(--muted); }
     .telem .row .v { color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
     .telem .row .v.hot { color: var(--amber); }
-    .telem .status {
+    .telem .status, .status {
       margin-top: 12px; text-align: center; font-size: 12px;
       letter-spacing: 1px; text-transform: uppercase; padding: 8px;
       border-radius: 4px; border: 1px dashed rgba(249,125,21,0.3);
       color: var(--muted);
     }
-    .telem .status.running { color: var(--amber); border-color: rgba(255,210,74,0.5); }
-    .telem .status.done { color: var(--good); border-color: rgba(74,222,128,0.5); }
-    .telem .status.failed { color: var(--bad); border-color: rgba(248,113,113,0.5); }
+    .status.running { color: var(--amber); border-color: rgba(255,210,74,0.5); }
+    .status.done { color: var(--good); border-color: rgba(74,222,128,0.5); }
+    .status.failed { color: var(--bad); border-color: rgba(248,113,113,0.5); }
 
     .seg-list { margin-top: 4px; font-size: 12px; }
     .seg-list .seg { display: flex; justify-content: space-between; padding: 2px 0; color: var(--muted); }
@@ -191,7 +204,7 @@
   <div class="wrap">
     <header class="tool-head">
       <h1>Dora — Fuel-Optimal Pathfinder</h1>
-      <div class="sub">A* search over a flight-corridor graph · ScanEagle UAV fuel model · live node exploration</div>
+      <div class="sub">A* over a flight-corridor graph · ScanEagle UAV fuel model · live search streamed from Python</div>
     </header>
 
     <div class="layout">
@@ -206,7 +219,7 @@
             <div class="row"><span class="swatch-line" style="background:#f97d15"></span>Best path</div>
             <div class="row"><span class="dot" style="background:#ef4444"></span>No-fly zone</div>
           </div>
-          <div class="stage-hint" id="stageHint">Click to add a waypoint · Shift-click to drop a no-fly zone</div>
+          <div class="stage-hint" id="stageHint">Turn on Edit, then click to add a waypoint · Shift-click to drop a no-fly zone</div>
         </div>
       </div>
 
@@ -237,14 +250,45 @@
           </div>
 
           <div class="ctrl-row">
-            <label for="resolution">Grid resolution — <span id="resVal" class="range-val">4.0 m</span></label>
-            <input type="range" id="resolution" min="2.5" max="7" step="0.5" value="4">
+            <label for="resolution">Grid resolution — <span id="resVal" class="range-val">5.0 m</span></label>
+            <input type="range" id="resolution" min="2.5" max="7" step="0.5" value="5">
           </div>
 
           <div class="ctrl-row">
             <label for="speed">Search speed — <span id="speedVal" class="range-val">6 nodes/frame</span></label>
-            <input type="range" id="speed" min="1" max="40" step="1" value="6">
+            <input type="range" id="speed" min="1" max="60" step="1" value="6">
           </div>
+
+          <!-- Aircraft properties -->
+          <details class="fold" id="acFold">
+            <summary>Aircraft properties</summary>
+            <div class="fold-body">
+              <div class="fold-hint">Defaults model the Boeing ScanEagle UAV.</div>
+              <div class="ctrl-grid2">
+                <div class="ctrl-row"><label for="ac-mass">Mass kg</label><input type="number" id="ac-mass" value="28" step="0.5"></div>
+                <div class="ctrl-row"><label for="ac-tas">Airspeed m/s</label><input type="number" id="ac-tas" value="28" step="0.5"></div>
+                <div class="ctrl-row"><label for="ac-span">Wingspan m</label><input type="number" id="ac-span" value="3.1" step="0.1"></div>
+                <div class="ctrl-row"><label for="ac-ar">Aspect ratio</label><input type="number" id="ac-ar" value="12" step="0.5"></div>
+                <div class="ctrl-row"><label for="ac-cd0">CD0</label><input type="number" id="ac-cd0" value="0.035" step="0.005"></div>
+                <div class="ctrl-row"><label for="ac-osw">Oswald e</label><input type="number" id="ac-osw" value="0.85" step="0.01"></div>
+                <div class="ctrl-row"><label for="ac-eta">Prop η</label><input type="number" id="ac-eta" value="0.75" step="0.01"></div>
+                <div class="ctrl-row"><label for="ac-sfc">SFC kg/W·s</label><input type="number" id="ac-sfc" value="0.0000001" step="0.00000001"></div>
+              </div>
+            </div>
+          </details>
+
+          <!-- Backend connection -->
+          <details class="fold" id="beFold">
+            <summary>Backend connection</summary>
+            <div class="fold-body">
+              <div class="fold-hint">The Python API that runs the real A* search.</div>
+              <div class="ctrl-row">
+                <label for="apiBase">API base URL</label>
+                <input type="text" id="apiBase" value="http://localhost:8000" spellcheck="false">
+              </div>
+              <div class="status" id="conn-status">Not checked</div>
+            </div>
+          </details>
 
           <div class="btn-row">
             <button class="tool-btn wide" id="runBtn">▶ Run Search</button>
@@ -258,7 +302,7 @@
           <div class="panel-title">Telemetry</div>
           <div class="telem" id="telem">
             <div class="grp">Mission Progress</div>
-            <div class="row"><span class="k">Waypoint</span><span class="v" id="t-wp">– / –</span></div>
+            <div class="row"><span class="k">Segment</span><span class="v" id="t-wp">– / –</span></div>
             <div class="row"><span class="k">Iteration</span><span class="v" id="t-iter">0</span></div>
             <div class="row"><span class="k">Nodes visited</span><span class="v" id="t-visited">0</span></div>
             <div class="row"><span class="k">Frontier size</span><span class="v" id="t-frontier">0</span></div>
@@ -284,360 +328,12 @@
   <script>
   "use strict";
 
-  /* =========================================================================
-     ScanEagle UAV fuel model  (port of pathfinder/models/aircraft.py)
-     ========================================================================= */
-  const RHO = 1.225;          // air density at sea level (kg/m^3)
-  const G0  = 9.80665;
-
-  class Aircraft {
-    constructor() {
-      this.mass_kg   = 28.0;
-      this.wingspan  = 3.1;
-      this.AR        = 12.0;
-      this.CD0       = 0.035;
-      this.oswald    = 0.85;
-      this.eta_prop  = 0.75;
-      this.sfc       = 1.0e-7;     // kg/(W*s)
-      this.V         = 28.0;       // true airspeed m/s
-      // derived
-      this.weight_N  = this.mass_kg * G0;
-      this.S         = (this.wingspan ** 2) / this.AR;
-      this.k         = 1.0 / (Math.PI * this.oswald * this.AR);
-    }
-    fuelBurnRate(V = this.V) {
-      const CL = this.weight_N / (0.5 * RHO * V * V * this.S);
-      const CD = this.CD0 + this.k * CL * CL;
-      const D  = 0.5 * RHO * V * V * this.S * CD;
-      const P  = (D * V) / this.eta_prop;
-      return this.sfc * P;                 // kg/s
-    }
-    fuelBurn(distance, V = this.V) {
-      const t = distance / V;
-      return this.fuelBurnRate(V) * t;     // kg
-    }
-  }
-
-  /* =========================================================================
-     Environment: wind + circular no-fly zones
-     (port of pathfinder/models/environment.py)
-     ========================================================================= */
-  function dist(a, b) { const dx = b.x - a.x, dy = b.y - a.y; return Math.hypot(dx, dy); }
-
-  function headingDeg(p1, p2) {
-    // atan2(dx, dy) -> 0=North, 90=East ; normalised to [0,360)
-    const dx = p2.x - p1.x, dy = p2.y - p1.y;
-    let deg = Math.atan2(dx, dy) * 180 / Math.PI;
-    return ((deg % 360) + 360) % 360;
-  }
-
-  class Environment {
-    constructor(windSpeed = 0, windDir = 0) {
-      this.windSpeed = windSpeed;
-      this.windDir = windDir;
-      this.zones = [];   // {x, y, r, name}
-    }
-    addZone(x, y, r, name) { this.zones.push({ x, y, r, name }); }
-
-    isValidPoint(p) {
-      for (const z of this.zones) {
-        if (Math.hypot(p.x - z.x, p.y - z.y) <= z.r) return false;
-      }
-      return true;
-    }
-    segmentHitsZone(p1, p2) {
-      const dx = p2.x - p1.x, dy = p2.y - p1.y;
-      for (const z of this.zones) {
-        const fx = z.x - p1.x, fy = z.y - p1.y;
-        const a = dx*dx + dy*dy;
-        const b = -2 * (fx*dx + fy*dy);
-        const c = fx*fx + fy*fy - z.r*z.r;
-        const disc = b*b - 4*a*c;
-        if (disc < 0) continue;
-        const sd = Math.sqrt(disc);
-        const t1 = (-b + sd) / (2*a);
-        const t2 = (-b - sd) / (2*a);
-        if ((t1 >= 0 && t1 <= 1) || (t2 >= 0 && t2 <= 1)) return true;
-      }
-      return false;
-    }
-    isValidSegment(p1, p2) {
-      if (!this.isValidPoint(p1) || !this.isValidPoint(p2)) return false;
-      return !this.segmentHitsZone(p1, p2);
-    }
-    groundspeed(V, hdg) {
-      // headwind component (positive = tailwind, adds to groundspeed)
-      const rel = (this.windDir - hdg) * Math.PI / 180;
-      const headwind = this.windSpeed * Math.cos(rel);
-      return Math.max(0, V + headwind);
-    }
-  }
-
-  /* =========================================================================
-     Cost calculator (fuel) — port of pathfinder/planning/cost.py
-     ========================================================================= */
-  class Cost {
-    constructor(aircraft, env) { this.ac = aircraft; this.env = env; }
-    edge(p1, p2) {
-      const d = dist(p1, p2);
-      if (this.env.windSpeed === 0) return this.ac.fuelBurn(d);
-      const gs = this.env.groundspeed(this.ac.V, headingDeg(p1, p2));
-      if (gs <= 0) return Infinity;
-      return this.ac.fuelBurnRate(this.ac.V) * (d / gs);
-    }
-    heuristic(cur, goal) {
-      // admissible: straight-line fuel, no wind penalty
-      return this.ac.fuelBurn(dist(cur, goal));
-    }
-  }
-
-  /* =========================================================================
-     Flight graph — port of pathfinder/planning/graph.py
-     (corridor nodes + obstacle detour rings, spatial-hash edges)
-     ========================================================================= */
+  const $ = id => document.getElementById(id);
   const round2 = v => Math.round(v * 100) / 100;
-  const keyOf  = n => n.x + "," + n.y;
-
-  class FlightGraph {
-    constructor(waypoints, env, opts = {}) {
-      this.waypoints = waypoints;
-      this.env = env;
-      this.corridor   = opts.corridor   ?? 6.0;
-      this.resolution = opts.resolution ?? 4.0;
-      this.expansion  = opts.expansion  ?? 3.0;
-      this.maxSearch  = opts.maxSearch  ?? 38.0;   // web perf cap
-
-      // adaptive search width (wider near big obstacles), capped for the browser
-      if (env.zones.length) {
-        const maxR = Math.max(...env.zones.map(z => z.r));
-        this.searchWidth = Math.min(
-          this.maxSearch,
-          Math.max(this.corridor * this.expansion, maxR * 3.0)
-        );
-      } else {
-        this.searchWidth = Math.min(this.maxSearch, this.corridor * this.expansion);
-      }
-
-      this.nodes = new Map();          // key -> {x,y}
-      this.edges = new Map();          // key -> [{x,y}, ...]
-      this._build();
-    }
-
-    _add(n) { const k = keyOf(n); if (!this.nodes.has(k)) this.nodes.set(k, n); }
-
-    _build() {
-      for (const wp of this.waypoints) this._add(wp);
-      for (let i = 0; i < this.waypoints.length - 1; i++) {
-        this._corridorNodes(this.waypoints[i], this.waypoints[i + 1]);
-      }
-      if (this.env.zones.length) this._detourNodes();
-      this._buildEdges();
-    }
-
-    _corridorNodes(p1, p2) {
-      const dx = p2.x - p1.x, dy = p2.y - p1.y;
-      const len = Math.hypot(dx, dy);
-      if (len === 0) return;
-      const ux = dx / len, uy = dy / len;
-      const px = -uy, py = ux;                       // perpendicular
-      const numSteps = Math.floor(len / this.resolution) + 1;
-      const numLat   = Math.floor(this.searchWidth / this.resolution);
-      for (let i = 0; i <= numSteps; i++) {
-        const t = numSteps > 0 ? i / numSteps : 0;
-        const bx = p1.x + t * dx, by = p1.y + t * dy;
-        for (let j = -numLat; j <= numLat; j++) {
-          const off = j * this.resolution;
-          const n = { x: round2(bx + off * px), y: round2(by + off * py) };
-          if (this.env.isValidPoint(n)) this._add(n);
-        }
-      }
-    }
-
-    _detourNodes() {
-      for (const z of this.env.zones) {
-        const ringR = z.r + 5.0 + this.searchWidth;
-        const circ  = 2 * Math.PI * ringR;
-        const num   = Math.max(Math.floor(circ / this.resolution), 16);
-        for (let i = 0; i < num; i++) {
-          const a = 2 * Math.PI * i / num;
-          const n = { x: round2(z.x + ringR * Math.cos(a)), y: round2(z.y + ringR * Math.sin(a)) };
-          if (this.env.isValidPoint(n) && this._nearCorridor(n, ringR * 1.5)) this._add(n);
-        }
-      }
-    }
-
-    _nearCorridor(p, maxD) {
-      for (let i = 0; i < this.waypoints.length - 1; i++) {
-        if (this._pointToSeg(p, this.waypoints[i], this.waypoints[i + 1]) <= maxD) return true;
-      }
-      return false;
-    }
-
-    _pointToSeg(p, a, b) {
-      const dx = b.x - a.x, dy = b.y - a.y;
-      if (dx === 0 && dy === 0) return Math.hypot(p.x - a.x, p.y - a.y);
-      let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx*dx + dy*dy);
-      t = Math.max(0, Math.min(1, t));
-      return Math.hypot(p.x - (a.x + t*dx), p.y - (a.y + t*dy));
-    }
-
-    _buildEdges() {
-      // spatial hash so this is ~O(n) instead of O(n^2)
-      const conn = this.resolution * 1.5;
-      const cell = conn;
-      const buckets = new Map();
-      const bkey = (cx, cy) => cx + ":" + cy;
-      const all = [...this.nodes.values()];
-      for (const n of all) {
-        const cx = Math.floor(n.x / cell), cy = Math.floor(n.y / cell);
-        const bk = bkey(cx, cy);
-        if (!buckets.has(bk)) buckets.set(bk, []);
-        buckets.get(bk).push(n);
-      }
-      for (const n of all) {
-        const cx = Math.floor(n.x / cell), cy = Math.floor(n.y / cell);
-        const list = [];
-        for (let ox = -1; ox <= 1; ox++) {
-          for (let oy = -1; oy <= 1; oy++) {
-            const b = buckets.get(bkey(cx + ox, cy + oy));
-            if (!b) continue;
-            for (const o of b) {
-              if (o === n) continue;
-              if (Math.hypot(o.x - n.x, o.y - n.y) <= conn && this.env.isValidSegment(n, o)) {
-                list.push(o);
-              }
-            }
-          }
-        }
-        this.edges.set(keyOf(n), list);
-      }
-    }
-
-    neighbors(n) { return this.edges.get(keyOf(n)) || []; }
-  }
+  const numVal = (id, d) => { const v = parseFloat($(id).value); return isFinite(v) ? v : d; };
 
   /* =========================================================================
-     Binary min-heap for the A* frontier  (orders by f, then g, then seq)
-     ========================================================================= */
-  class MinHeap {
-    constructor() { this.a = []; this.seq = 0; }
-    get size() { return this.a.length; }
-    _less(i, j) {
-      const x = this.a[i], y = this.a[j];
-      if (x.f !== y.f) return x.f < y.f;
-      if (x.g !== y.g) return x.g < y.g;
-      return x.seq < y.seq;
-    }
-    _swap(i, j) { const t = this.a[i]; this.a[i] = this.a[j]; this.a[j] = t; }
-    push(f, g, node) {
-      this.a.push({ f, g, node, seq: this.seq++ });
-      let i = this.a.length - 1;
-      while (i > 0) { const p = (i - 1) >> 1; if (this._less(i, p)) { this._swap(i, p); i = p; } else break; }
-    }
-    pop() {
-      const top = this.a[0], last = this.a.pop();
-      if (this.a.length) {
-        this.a[0] = last;
-        let i = 0, n = this.a.length;
-        for (;;) {
-          const l = 2*i + 1, r = 2*i + 2; let s = i;
-          if (l < n && this._less(l, s)) s = l;
-          if (r < n && this._less(r, s)) s = r;
-          if (s === i) break;
-          this._swap(i, s); i = s;
-        }
-      }
-      return top;
-    }
-  }
-
-  /* =========================================================================
-     Multi-waypoint A* — generator yielding one state per node expansion
-     (port of examples/animated_pathfinding.py)
-     ========================================================================= */
-  function reconstruct(parent, node) {
-    const path = [];
-    let cur = node;
-    while (cur) { path.push(cur); cur = parent.get(keyOf(cur)); }
-    return path.reverse();
-  }
-  function pathDistance(path) {
-    let d = 0;
-    for (let i = 0; i < path.length - 1; i++) d += dist(path[i], path[i + 1]);
-    return d;
-  }
-
-  function* planMission(graph, cost) {
-    const wps = graph.waypoints;
-    let completePath = [];
-    let totalFuel = 0;
-    const segments = [];
-    let iteration = 0;
-
-    for (let wi = 0; wi < wps.length - 1; wi++) {
-      const start = wps[wi], goal = wps[wi + 1];
-      const open = new MinHeap();
-      open.push(cost.heuristic(start, goal), 0, start);
-      const gCost  = new Map([[keyOf(start), 0]]);
-      const parent = new Map([[keyOf(start), null]]);
-      const visited = new Set();
-      let segPath = null, segG = 0, reached = false;
-
-      while (open.size) {
-        const { f, g, node: current } = open.pop();
-        const ck = keyOf(current);
-        if (visited.has(ck)) continue;
-        visited.add(ck);
-        iteration++;
-
-        const frontier = [];
-        for (const e of open.a) if (!visited.has(keyOf(e.node))) frontier.push(e.node);
-
-        reached = (current.x === goal.x && current.y === goal.y);
-        yield {
-          segment: wi, segCount: wps.length - 1,
-          current, g, f, iteration,
-          visitedCount: visited.size,
-          newlyVisited: current,
-          frontier,
-          segPath: reconstruct(parent, current),
-          completePath, totalFuel, segments,
-          goalReached: reached, final: false
-        };
-
-        if (reached) { segPath = reconstruct(parent, goal); segG = g; break; }
-
-        for (const nb of graph.neighbors(current)) {
-          const nk = keyOf(nb);
-          if (visited.has(nk)) continue;
-          const tg = g + cost.edge(current, nb);
-          if (!gCost.has(nk) || tg < gCost.get(nk)) {
-            gCost.set(nk, tg);
-            parent.set(nk, current);
-            open.push(tg + cost.heuristic(nb, goal), tg, nb);
-          }
-        }
-      }
-
-      if (!segPath) {           // segment failed — no route
-        yield { failed: true, segment: wi, completePath, totalFuel, segments, iteration };
-        return;
-      }
-
-      completePath = completePath.length ? completePath.concat(segPath.slice(1)) : segPath.slice();
-      totalFuel += segG;
-      segments.push({ from: start, to: goal, cost: segG, distance: pathDistance(segPath) });
-    }
-
-    yield {
-      final: true, completePath, totalFuel, segments,
-      iteration, current: wps[wps.length - 1],
-      segCount: wps.length - 1
-    };
-  }
-
-  /* =========================================================================
-     Scenarios
+     Scenarios (client-side; sent to the backend on Run)
      ========================================================================= */
   function buildScene(name) {
     switch (name) {
@@ -661,25 +357,35 @@
   }
 
   /* =========================================================================
-     Renderer + animation driver
+     State
      ========================================================================= */
   const canvas = document.getElementById("stage");
   const ctx = canvas.getContext("2d");
-
-  // offscreen layer accumulates visited dots (cheap redraw of large sets)
-  const visitedLayer = document.createElement("canvas");
+  const visitedLayer = document.createElement("canvas");  // accumulates visited dots
   const vctx = visitedLayer.getContext("2d");
 
-  let aircraft = new Aircraft();
-  let env, graph, cost, gen, lastState = null;
   let waypoints = [], zones = [];
-  let running = false, finished = false, rafId = null;
+  let curW = 800, curH = 480;
   let stepsPerFrame = 6;
   let editMode = false;
 
-  // world->screen transform (set on graph build)
+  // live render state, fed from the streamed search
+  let viz = { frontier: [], current: null, segPath: [], completePath: [], final: false };
+  // telemetry accumulators
+  let telem = { iter: 0, visited: 0, segment: 0, segCount: 0, cx: null, cy: null,
+                g: null, f: null, totalFuel: 0, graphNodes: 0, segments: [],
+                done: false, failed: false, error: null, building: false };
+
+  // streaming / animation
+  let queue = [], streaming = false, playing = false, rafId = null;
+  let metaBounds = null;
+
+  // world->screen transform
   let T = { scale: 1, ox: 0, oy: 0, minX: 0, minY: 0, h: 0 };
 
+  /* =========================================================================
+     Canvas + transform
+     ========================================================================= */
   function fitCanvas() {
     const rect = canvas.getBoundingClientRect();
     const cssW = rect.width || 800;
@@ -692,55 +398,56 @@
     visitedLayer.width  = canvas.width;
     visitedLayer.height = canvas.height;
     vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    return { w: cssW, h: cssH };
+    curW = cssW; curH = cssH;
   }
 
-  function computeTransform(w, h) {
-    // bounds from waypoints + zones, padded
+  function setTransform(minX, minY, maxX, maxY) {
+    const pad = 30;
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    const spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
+    const scale = Math.min(curW / spanX, curH / spanY);
+    const ox = (curW - spanX * scale) / 2;
+    const oy = (curH - spanY * scale) / 2;
+    T = { scale, ox, oy, minX, minY, h: curH };
+  }
+  function transformFromScene() {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     const pts = [...waypoints];
-    for (const z of zones) { pts.push({x:z.x - z.r, y:z.y - z.r}, {x:z.x + z.r, y:z.y + z.r}); }
+    for (const z of zones) pts.push({ x: z.x - z.r, y: z.y - z.r }, { x: z.x + z.r, y: z.y + z.r });
+    if (!pts.length) { setTransform(0, 0, 100, 100); return; }
     for (const p of pts) {
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
     }
-    const pad = 30;
-    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
-    const spanX = Math.max(1, maxX - minX), spanY = Math.max(1, maxY - minY);
-    const scale = Math.min(w / spanX, h / spanY);
-    const ox = (w - spanX * scale) / 2;
-    const oy = (h - spanY * scale) / 2;
-    T = { scale, ox, oy, minX, minY, h };
+    setTransform(minX, minY, maxX, maxY);
   }
+  function transformFromBounds(b) { setTransform(b[0], b[1], b[2], b[3]); }
+
   function wx(x) { return (x - T.minX) * T.scale + T.ox; }
   function wy(y) { return T.h - ((y - T.minY) * T.scale + T.oy); }   // flip Y (up = +y)
   function screenToWorld(sx, sy) {
-    return {
-      x: round2((sx - T.ox) / T.scale + T.minX),
-      y: round2((T.h - sy - T.oy) / T.scale + T.minY)
-    };
+    return { x: round2((sx - T.ox) / T.scale + T.minX), y: round2((T.h - sy - T.oy) / T.scale + T.minY) };
   }
 
-  function stampVisited(n) {
+  function stampVisited(x, y) {
     vctx.fillStyle = "rgba(91,100,115,0.55)";
     vctx.beginPath();
-    vctx.arc(wx(n.x), wy(n.y), 2.1, 0, Math.PI * 2);
+    vctx.arc(wx(x), wy(y), 2.1, 0, Math.PI * 2);
     vctx.fill();
   }
-  function rebuildVisitedLayer(nodes) {
-    vctx.clearRect(0, 0, visitedLayer.width, visitedLayer.height);
-    for (const n of nodes) stampVisited(n);
-  }
+  function clearVisited() { vctx.clearRect(0, 0, visitedLayer.width, visitedLayer.height); }
 
-  function drawScene(w, h) {
+  /* =========================================================================
+     Renderer
+     ========================================================================= */
+  function drawScene() {
+    const w = curW, h = curH;
     ctx.clearRect(0, 0, w, h);
 
     // faint grid
     ctx.strokeStyle = "rgba(249,125,21,0.05)";
     ctx.lineWidth = 1;
-    const gridStep = 40 * T.scale / 4;
-    // (light decorative grid; spacing in screen px)
-    const gp = Math.max(28, gridStep);
+    const gp = Math.max(28, 40 * T.scale / 4);
     for (let x = T.ox % gp; x < w; x += gp) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke(); }
     for (let y = T.oy % gp; y < h; y += gp) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
 
@@ -778,14 +485,14 @@
     ctx.drawImage(visitedLayer, 0, 0, visitedLayer.width, visitedLayer.height, 0, 0, w, h);
 
     // frontier
-    if (lastState && lastState.frontier) {
+    if (viz.frontier && viz.frontier.length) {
       ctx.fillStyle = "rgba(255,210,74,0.75)";
-      for (const n of lastState.frontier) {
+      for (const n of viz.frontier) {
         ctx.beginPath(); ctx.arc(wx(n.x), wy(n.y), 2.4, 0, Math.PI * 2); ctx.fill();
       }
     }
 
-    // path (completed segments + current partial)
+    // paths
     const drawPath = (path, color, width, glow) => {
       if (!path || path.length < 2) return;
       ctx.strokeStyle = color; ctx.lineWidth = width;
@@ -796,13 +503,11 @@
       for (let i = 1; i < path.length; i++) ctx.lineTo(wx(path[i].x), wy(path[i].y));
       ctx.stroke(); ctx.shadowBlur = 0;
     };
-    if (lastState) {
-      if (lastState.final) {
-        drawPath(lastState.completePath, "#f97d15", 3, "rgba(249,125,21,0.6)");
-      } else {
-        drawPath(lastState.completePath, "rgba(249,125,21,0.45)", 2.5);
-        drawPath(lastState.segPath, "#1e9bff", 2.5, "rgba(30,155,255,0.4)");
-      }
+    if (viz.final) {
+      drawPath(viz.completePath, "#f97d15", 3, "rgba(249,125,21,0.6)");
+    } else {
+      drawPath(viz.completePath, "rgba(249,125,21,0.45)", 2.5);
+      drawPath(viz.segPath, "#1e9bff", 2.5, "rgba(30,155,255,0.4)");
     }
 
     // waypoints
@@ -818,12 +523,12 @@
       ctx.fillText(isStart ? "S" : isGoal ? "G" : String(i + 1), x, y);
     });
 
-    // UAV current node (triangle pointing along travel heading)
-    if (lastState && lastState.current && !lastState.final) {
-      const c = lastState.current;
+    // UAV current node (triangle along travel heading)
+    if (viz.current && !viz.final) {
+      const c = viz.current;
       const x = wx(c.x), y = wy(c.y);
       let ang = -Math.PI / 2;
-      const sp = lastState.segPath;
+      const sp = viz.segPath;
       if (sp && sp.length >= 2) {
         const a = sp[sp.length - 2], b = sp[sp.length - 1];
         ang = Math.atan2(wy(b.y) - wy(a.y), wx(b.x) - wx(a.x));
@@ -839,58 +544,37 @@
     }
   }
 
-  /* ---- Telemetry ---- */
-  const $ = id => document.getElementById(id);
+  /* =========================================================================
+     Telemetry
+     ========================================================================= */
   function updateTelemetry() {
-    const s = lastState;
-    if (!s) return;
-    const wpNum = s.final ? (s.segCount + 1) : (s.segment + 1);
-    const wpTot = waypoints.length;
-    $("t-wp").textContent = `${wpNum} / ${wpTot}`;
-    $("t-iter").textContent = s.iteration ?? 0;
-    $("t-visited").textContent = s.visitedCount ?? (s.final ? "—" : 0);
-    $("t-frontier").textContent = s.frontier ? s.frontier.length : 0;
-    $("t-nodes").textContent = graph ? graph.nodes.size : 0;
-    if (s.current) {
-      $("t-x").textContent = s.current.x.toFixed(2) + " m";
-      $("t-y").textContent = s.current.y.toFixed(2) + " m";
-    }
-    $("t-g").textContent = (s.g != null ? s.g.toFixed(6) : (s.totalFuel?.toFixed(6) ?? "–")) + " kg";
-    $("t-f").textContent = (s.f != null ? s.f.toFixed(6) : "–") + " kg";
+    $("t-wp").textContent = `${telem.done ? telem.segCount : telem.segment + 1} / ${Math.max(1, waypoints.length - 1)}`;
+    $("t-iter").textContent = telem.iter;
+    $("t-visited").textContent = telem.visited;
+    $("t-frontier").textContent = viz.frontier ? viz.frontier.length : 0;
+    $("t-nodes").textContent = telem.graphNodes;
+    $("t-x").textContent = telem.cx != null ? telem.cx.toFixed(2) + " m" : "– m";
+    $("t-y").textContent = telem.cy != null ? telem.cy.toFixed(2) + " m" : "– m";
+    $("t-g").textContent = telem.g != null ? telem.g.toFixed(6) + " kg" : "– kg";
+    $("t-f").textContent = telem.f != null ? telem.f.toFixed(6) + " kg" : "– kg";
 
-    const segs = s.segments || [];
-    $("t-segs").innerHTML = segs.map((sg, i) =>
-      `<div class="seg"><span>Seg ${i+1} · ${sg.distance.toFixed(0)}m</span><span class="sv">${sg.cost.toFixed(6)} kg</span></div>`
-    ).join("") || `<div class="seg" style="opacity:.5">— awaiting segments —</div>`;
-    $("t-total").textContent = (s.totalFuel ?? 0).toFixed(6) + " kg";
+    $("t-segs").innerHTML = telem.segments.length
+      ? telem.segments.map((sg, i) => `<div class="seg"><span>Seg ${i + 1} · ${sg.dist.toFixed(0)}m</span><span class="sv">${sg.cost.toFixed(6)} kg</span></div>`).join("")
+      : `<div class="seg" style="opacity:.5">— awaiting segments —</div>`;
+    $("t-total").textContent = telem.totalFuel.toFixed(6) + " kg";
 
     const st = $("t-status");
-    if (s.failed) { st.textContent = "No route found — obstacle blocks corridor"; st.className = "status failed"; }
-    else if (s.final) { st.textContent = "Mission complete — optimal path locked"; st.className = "status done"; }
-    else { st.textContent = "Searching…"; st.className = "status running"; }
+    if (telem.error)      { st.textContent = telem.error; st.className = "status failed"; }
+    else if (telem.failed){ st.textContent = "No route found — obstacle blocks corridor"; st.className = "status failed"; }
+    else if (telem.done)  { st.textContent = "Mission complete — optimal path locked"; st.className = "status done"; }
+    else if (telem.building && !telem.graphNodes) { st.textContent = "Building flight graph…"; st.className = "status running"; }
+    else if (streaming || queue.length) { st.textContent = "Searching…"; st.className = "status running"; }
   }
 
-  /* ---- Build / reset ---- */
-  function rebuildGraph() {
-    const res = parseFloat($("resolution").value);
-    env = new Environment(parseFloat($("windSpeed").value) || 0, parseFloat($("windDir").value) || 0);
-    for (const z of zones) env.addZone(z.x, z.y, z.r, z.name);
-    cost = new Cost(aircraft, env);
-    graph = new FlightGraph(waypoints, env, { resolution: res, corridor: 6, expansion: 3 });
-  }
-
-  function resetSearch(rebuild = true) {
-    cancelAnimationFrame(rafId);
-    running = false; finished = false; gen = null; lastState = null;
-    const { w, h } = fitCanvas();
-    if (rebuild) rebuildGraph();
-    computeTransform(w, h);
-    vctx.clearRect(0, 0, visitedLayer.width, visitedLayer.height);
-    drawScene(w, h);
-    // telemetry idle reset
-    $("t-wp").textContent = `– / ${waypoints.length}`;
+  function resetTelemetryDom() {
+    $("t-wp").textContent = `– / ${Math.max(1, waypoints.length - 1)}`;
     $("t-iter").textContent = "0"; $("t-visited").textContent = "0";
-    $("t-frontier").textContent = "0"; $("t-nodes").textContent = graph ? graph.nodes.size : 0;
+    $("t-frontier").textContent = "0"; $("t-nodes").textContent = telem.graphNodes || 0;
     $("t-x").textContent = "– m"; $("t-y").textContent = "– m";
     $("t-g").textContent = "– kg"; $("t-f").textContent = "– kg";
     $("t-segs").innerHTML = `<div class="seg" style="opacity:.5">— awaiting segments —</div>`;
@@ -898,48 +582,201 @@
     const st = $("t-status"); st.textContent = "Idle — press Run"; st.className = "status";
   }
 
+  /* =========================================================================
+     Apply one streamed state
+     ========================================================================= */
+  function applyState(s) {
+    switch (s.type) {
+      case "building":
+        telem.building = true;
+        break;
+      case "meta":
+        telem.building = false;
+        telem.graphNodes = s.graph_nodes;
+        metaBounds = s.bounds;
+        transformFromBounds(s.bounds);   // fit to the full search extent (incl. detour rings)
+        clearVisited();
+        break;
+      case "step":
+        stampVisited(s.x, s.y);
+        viz.current = { x: s.x, y: s.y };
+        viz.final = false;
+        telem.iter = s.i; telem.visited = s.visited; telem.segment = s.seg;
+        telem.cx = s.x; telem.cy = s.y; telem.g = s.g; telem.f = s.f;
+        break;
+      case "frontier":
+        viz.frontier = s.pts.map(p => ({ x: p[0], y: p[1] }));
+        break;
+      case "path":
+        viz.segPath = s.path.map(p => ({ x: p[0], y: p[1] }));
+        break;
+      case "segpath": {
+        const seg = s.path.map(p => ({ x: p[0], y: p[1] }));
+        viz.completePath = viz.completePath.length ? viz.completePath.concat(seg.slice(1)) : seg;
+        viz.segPath = [];
+        telem.segments.push({ cost: s.cost, dist: s.dist });
+        telem.totalFuel = s.total_fuel;
+        break;
+      }
+      case "done":
+        viz.completePath = s.path.map(p => ({ x: p[0], y: p[1] }));
+        viz.final = true; viz.frontier = []; viz.current = null;
+        telem.totalFuel = s.total_fuel; telem.iter = s.iterations;
+        telem.segCount = s.segments.length;
+        telem.segments = s.segments.map(x => ({ cost: x.cost, dist: x.dist }));
+        telem.done = true;
+        break;
+      case "failed":
+        telem.failed = true; telem.done = true; viz.final = true; viz.frontier = [];
+        break;
+      case "error":
+        telem.error = s.message; telem.done = true;
+        break;
+    }
+  }
+
+  /* =========================================================================
+     Animation loop — consumes the queue at stepsPerFrame
+     ========================================================================= */
+  function loop() {
+    if (!playing) return;
+    let n = stepsPerFrame;
+    while (n-- > 0 && queue.length) applyState(queue.shift());
+    drawScene();
+    updateTelemetry();
+    if (queue.length || streaming) {
+      rafId = requestAnimationFrame(loop);
+    } else {
+      playing = false;   // fully drained
+    }
+  }
+  function startLoop() {
+    if (playing) return;
+    playing = true;
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(loop);
+  }
+
+  /* =========================================================================
+     Backend
+     ========================================================================= */
+  function apiBase() {
+    const v = ($("apiBase").value || "http://localhost:8000").trim().replace(/\/+$/, "");
+    try { localStorage.setItem("doraApi", v); } catch (e) {}
+    return v;
+  }
+
+  function collectConfig() {
+    return {
+      aircraft: {
+        mass_kg: numVal("ac-mass", 28),
+        true_airspeed_mps: numVal("ac-tas", 28),
+        wingspan_m: numVal("ac-span", 3.1),
+        aspect_ratio: numVal("ac-ar", 12),
+        CD0: numVal("ac-cd0", 0.035),
+        oswald_efficiency: numVal("ac-osw", 0.85),
+        eta_prop: numVal("ac-eta", 0.75),
+        sfc_kg_per_W_s: numVal("ac-sfc", 1e-7)
+      },
+      wind: { speed_mps: numVal("windSpeed", 0), direction_deg: numVal("windDir", 0) },
+      waypoints: waypoints.map(p => [p.x, p.y]),
+      obstacles: zones.map(z => [z.x, z.y, z.r, z.name || ""]),
+      resolution: parseFloat($("resolution").value),
+      corridor_width: 6.0,
+      search_expansion: 3.0
+    };
+  }
+
+  async function checkHealth() {
+    const el = $("conn-status");
+    el.textContent = "Checking…"; el.className = "status running";
+    try {
+      const r = await fetch(apiBase() + "/api/health", { method: "GET" });
+      if (r.ok) { const j = await r.json(); el.textContent = "Connected — " + (j.service || "ok"); el.className = "status done"; }
+      else { el.textContent = "Server responded " + r.status; el.className = "status failed"; }
+    } catch (e) {
+      el.textContent = "Offline — start the Python server"; el.className = "status failed";
+    }
+  }
+
+  function resetRunState() {
+    cancelAnimationFrame(rafId);
+    playing = false; streaming = false; queue = [];
+    viz = { frontier: [], current: null, segPath: [], completePath: [], final: false };
+    telem = { iter: 0, visited: 0, segment: 0, segCount: 0, cx: null, cy: null,
+              g: null, f: null, totalFuel: 0, graphNodes: 0, segments: [],
+              done: false, failed: false, error: null, building: false };
+    clearVisited();
+  }
+
+  async function runSearch() {
+    resetRunState();
+    $("pauseBtn").textContent = "Pause";
+    $("t-status").textContent = "Contacting backend…"; $("t-status").className = "status running";
+
+    const cfg = collectConfig();
+    streaming = true;
+    startLoop();
+
+    try {
+      const res = await fetch(apiBase() + "/api/plan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cfg)
+      });
+      if (!res.ok || !res.body) throw new Error("Server returned " + res.status);
+
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (line) queue.push(JSON.parse(line));
+        }
+      }
+      streaming = false;
+      startLoop();   // drain whatever's left
+    } catch (e) {
+      streaming = false; playing = false;
+      telem.error = "Backend error — is the server running? (" + e.message + ")";
+      updateTelemetry();
+      $("conn-status").textContent = "Offline — start the Python server";
+      $("conn-status").className = "status failed";
+      $("beFold").open = true;
+    }
+  }
+
+  /* =========================================================================
+     Idle scene (no search) + scenarios
+     ========================================================================= */
+  function showIdle() {
+    resetRunState();
+    fitCanvas();
+    transformFromScene();
+    drawScene();
+    resetTelemetryDom();
+  }
   function loadScene(name) {
     const sc = buildScene(name);
     waypoints = sc.waypoints.map(p => ({ ...p }));
     zones = sc.zones.map(([x, y, r, n]) => ({ x, y, r, name: n }));
-    resetSearch(true);
+    telem.graphNodes = 0;
+    showIdle();
   }
 
-  /* ---- Animation loop ---- */
-  function frame() {
-    const rect = canvas.getBoundingClientRect();
-    const w = rect.width, h = parseFloat(canvas.style.height);
-    if (running && gen) {
-      for (let i = 0; i < stepsPerFrame; i++) {
-        const r = gen.next();
-        if (r.done) { running = false; finished = true; break; }
-        lastState = r.value;
-        if (lastState.newlyVisited) stampVisited(lastState.newlyVisited);
-        if (lastState.final || lastState.failed) { running = false; finished = true; break; }
-      }
-      updateTelemetry();
-    }
-    drawScene(w, h);
-    if (running) rafId = requestAnimationFrame(frame);
-  }
-
-  function runSearch() {
-    if (finished || !gen) { resetSearch(true); gen = planMission(graph, cost); finished = false; }
-    running = true;
-    $("t-status").textContent = "Searching…"; $("t-status").className = "status running";
-    cancelAnimationFrame(rafId);
-    rafId = requestAnimationFrame(frame);
-  }
-
-  /* ---- UI wiring ---- */
-  $("preset").addEventListener("change", e => {
-    if (e.target.value === "custom") return;        // keep current clicks
-    loadScene(e.target.value);
-  });
-  $("windSpeed").addEventListener("change", () => resetSearch(true));
-  $("windDir").addEventListener("change", () => resetSearch(true));
+  /* =========================================================================
+     UI wiring
+     ========================================================================= */
+  $("preset").addEventListener("change", e => { if (e.target.value !== "custom") loadScene(e.target.value); });
+  $("windSpeed").addEventListener("change", showIdle);
+  $("windDir").addEventListener("change", showIdle);
   $("resolution").addEventListener("input", e => { $("resVal").textContent = (+e.target.value).toFixed(1) + " m"; });
-  $("resolution").addEventListener("change", () => resetSearch(true));
   $("speed").addEventListener("input", e => {
     stepsPerFrame = +e.target.value;
     $("speedVal").textContent = stepsPerFrame + " node" + (stepsPerFrame > 1 ? "s" : "") + "/frame";
@@ -947,12 +784,11 @@
 
   $("runBtn").addEventListener("click", runSearch);
   $("pauseBtn").addEventListener("click", () => {
-    if (finished) return;
-    running = !running;
-    $("pauseBtn").textContent = running ? "Pause" : "Resume";
-    if (running) { cancelAnimationFrame(rafId); rafId = requestAnimationFrame(frame); }
+    if (telem.done) return;
+    if (playing) { playing = false; $("pauseBtn").textContent = "Resume"; }
+    else { $("pauseBtn").textContent = "Pause"; startLoop(); }
   });
-  $("resetBtn").addEventListener("click", () => { $("pauseBtn").textContent = "Pause"; resetSearch(true); });
+  $("resetBtn").addEventListener("click", () => { $("pauseBtn").textContent = "Pause"; showIdle(); });
   $("editBtn").addEventListener("click", () => {
     editMode = !editMode;
     $("editBtn").textContent = "✎ Edit Waypoints: " + (editMode ? "ON" : "OFF");
@@ -960,20 +796,19 @@
     $("stageHint").style.opacity = editMode ? "1" : "0.5";
   });
 
+  $("apiBase").addEventListener("change", checkHealth);
+
   canvas.addEventListener("click", e => {
     if (!editMode) return;
     const rect = canvas.getBoundingClientRect();
     const p = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-    if (e.shiftKey) {
-      zones.push({ x: p.x, y: p.y, r: 18, name: "No-Fly" });
-    } else {
-      waypoints.push(p);
-    }
+    if (e.shiftKey) zones.push({ x: p.x, y: p.y, r: 18, name: "No-Fly" });
+    else waypoints.push(p);
     $("preset").value = "custom";
-    resetSearch(true);
+    showIdle();
   });
 
-  // mouse-glow on glass panels (matches rocket tool)
+  // mouse-glow on glass panels
   document.querySelectorAll(".glass-panel").forEach(panel => {
     panel.addEventListener("mousemove", e => {
       const r = panel.getBoundingClientRect();
@@ -990,23 +825,22 @@
   window.addEventListener("resize", () => {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      const wasRunning = running;
-      cancelAnimationFrame(rafId); running = false;
-      const { w, h } = fitCanvas();
-      computeTransform(w, h);
-      // re-stamp visited from current state if mid-search
-      if (lastState && !lastState.final) {
-        // cheap: clear; dots will re-accumulate as search continues
-        vctx.clearRect(0, 0, visitedLayer.width, visitedLayer.height);
-      }
-      drawScene(w, h);
-      if (wasRunning && !finished) { running = true; rafId = requestAnimationFrame(frame); }
+      fitCanvas();
+      if (metaBounds && (streaming || telem.done || telem.visited)) transformFromBounds(metaBounds);
+      else transformFromScene();
+      drawScene();
     }, 120);
   });
 
-  // boot
-  stepsPerFrame = +$("speed").value;
-  loadScene("coastal");
+  /* =========================================================================
+     Boot
+     ========================================================================= */
+  (function boot() {
+    try { const saved = localStorage.getItem("doraApi"); if (saved) $("apiBase").value = saved; } catch (e) {}
+    stepsPerFrame = +$("speed").value;
+    loadScene("coastal");
+    checkHealth();
+  })();
   </script>
 </body>
 </html>
