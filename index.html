@@ -1521,9 +1521,12 @@ function advanceExit(now) {
   const screenOp = 1 - smooth(Math.min(p / 0.7, 1));
   tessEl.style.opacity          = screenOp.toFixed(3);
   reservoirBackEl.style.opacity = screenOp.toFixed(3);
-  // Hole scales 0 → 1 over the camera's second half of the trip, smooth onset.
+  // Hole re-forms as the camera clears the horizon. holeScale is floored at
+  // 0.30 so the instant it's revealed it's already a 30%-formed black hole
+  // (not a zero-size dot growing in), then it inflates the remaining 70% to
+  // full size. The reservoirT fade below is the smooth reveal (code → lensing).
   const grow = smooth(Math.max(0, Math.min((camE - REFORM_CAM) / (1 - REFORM_CAM), 1)));
-  holeScale  = grow;                                     // geometry + lensing strength
+  holeScale  = 0.30 + 0.70 * grow;                      // 30% formed on reveal → 100% at landing
   reservoirT = 1 - grow;                                 // integration steps + grain follow the growth
   // Name + buttons ease back in over the final stretch, landing with the camera.
   const stageOp = smooth(Math.max(0, (p - 0.78) / 0.22));
