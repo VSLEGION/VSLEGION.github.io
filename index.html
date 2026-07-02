@@ -285,7 +285,7 @@
     /* scatter / reassemble are driven by the Web Animations API (see JS) */
     body.project-open #reservoir-projects { pointer-events: none; }
 
-    .proj-card {
+    .proj-card, .proj-echo {
       width: 240px;
       cursor: pointer;
       background-color: #0b0716;
@@ -429,7 +429,7 @@
     body.reservoir.project-open #reservoirBack { opacity: 0; pointer-events: none; }
 
     /* ---- Reservoir Mode ---- */
-    #field { transition: filter 1.2s ease; }
+    #field { transition: filter 1.2s ease, opacity .6s ease; }
     body.reservoir #field {
       filter: saturate(2.4) contrast(1.2) brightness(1.1);
     }
@@ -459,6 +459,78 @@
       opacity: 0; pointer-events: none; transition: opacity .4s ease; z-index: 7;
     }
     body.thorne .exit-hint { opacity: 1; }
+
+    /* =========================================================
+       The Fall → Tesseract Library (Interstellar easter egg)
+       ========================================================= */
+
+    /* White flash frame at the horizon crossing — hides the DOM swap. */
+    #fall-flash {
+      position: fixed; inset: 0; z-index: 30;
+      background: #737373; opacity: 0; pointer-events: none;
+    }
+    #fall-flash.flash-anim { animation: fall-flash .30s ease-out; }
+    @keyframes fall-flash { 0% { opacity: 0; } 30% { opacity: .9; } 100% { opacity: 0; } }
+
+    /* During the fall AND inside the library, the hero chrome is gone
+       (pointer parallax keeps working — it's a window listener). */
+    body.falling  .stage,    body.library  .stage    { opacity: 0; pointer-events: none; }
+    body.falling  .controls, body.library  .controls { opacity: 0; pointer-events: none; }
+
+    /* The library backdrop IS the reservoir animation: the black hole dissolves
+       (reservoirT → 1, driven in JS) into the flowing, saturated field of
+       streaming code — the same effect the "Project Reservoir" button gives on
+       main. On Back it re-forms (reservoirT → 0) as the camera zooms out. */
+    body.library #field { filter: saturate(2.4) contrast(1.2) brightness(1.1); }
+    body.library #grain { opacity: 0.5; }
+
+    /* During the choreographed Back exit, JS drives the tab opacities frame-by-
+       frame, so CSS transitions must not smear them. */
+    body.exiting #tesseract, body.exiting #reservoirBack,
+    body.exiting .stage, body.exiting .controls { transition: none !important; }
+
+    /* Slightly smaller cards inside the tesseract so all five stacks sit in
+       one row and their depth-recursion stays visible at the angled view. */
+    #tesseract .proj-card, #tesseract .proj-echo { width: 200px; }
+
+    /* Back button follows the library the way it follows reservoir mode. */
+    body.library #reservoirBack { opacity: 1; pointer-events: auto; }
+    body.library.project-open #reservoirBack { opacity: 0; pointer-events: none; }
+
+    /* The CSS-3D scene layered over the canvas. */
+    #tesseract {
+      position: fixed; inset: 0; z-index: 3;
+      perspective: 1200px; perspective-origin: 50% 45%;
+      opacity: 0; pointer-events: none;
+      transition: opacity .55s ease;
+      touch-action: none;                 /* let drag-orbit own touch gestures */
+    }
+    body.library #tesseract { opacity: 1; pointer-events: auto; }
+    body.library.project-open #tesseract { pointer-events: none; }
+
+    #tesseract-world {
+      position: absolute; inset: 0;
+      transform-style: preserve-3d;
+      transform: rotateX(0deg) rotateY(0deg);
+      will-change: transform;
+    }
+
+    /* Each shelf of the tesseract: the same project row repeated at depth.
+       The real (front) row is #reservoir-projects itself, re-homed here. */
+    .tess-layer, #reservoir-projects.tess-front {
+      position: absolute; inset: auto; top: 50%; left: 50%;   /* inset first — it's shorthand for top/left */
+      width: min(1180px, 94vw);
+      margin: 0; padding: 0;
+      display: flex; gap: 2rem; flex-wrap: wrap;
+      align-items: center; justify-content: center;
+      transform: translate(-50%, calc(-50% + var(--y, 0px))) translateZ(var(--z, 0px));
+      transition: opacity .32s ease;
+    }
+    .tess-layer.echo { pointer-events: none; }         /* echoes are atmosphere only */
+    body.library #reservoir-projects.tess-front { opacity: 1; pointer-events: auto; }
+
+    /* Exit: echoes collapse/fade first, then the fall reverses. */
+    body.tess-collapsing .tess-layer.echo { opacity: 0 !important; }
   </style>
 </head>
 <body>
@@ -624,6 +696,9 @@ shadow radius  = 3√3 / 2 ≈ 2.598 rs</code>
   <button id="reservoirBack" aria-label="Back to main screen">&#8592; Back</button>
 
   <div class="exit-hint">Thorne Mode — press Esc or click to exit</div>
+
+  <!-- Full-screen flash covering the horizon crossing (Fall → Library swap) -->
+  <div id="fall-flash"></div>
 
 <script>
 "use strict";
@@ -851,6 +926,30 @@ let reservoirTarget = 0, reservoirT = 0;
 let reservoirLerp = 0.025;   // gentle morph for reservoir; About Me bumps this up
 let aboutPending = false;    // banner waits until the black hole is 50% faded
 
+// ---- The Fall / Tesseract Library state (declared before frame()) ----
+const CAM_HOME    = CONFIG.camDist;   // 17 — home camera distance
+const CAM_THROUGH = 2.5;              // through-the-horizon distance (not all the way to 1)
+const FOV_THROUGH = 0.92;             // widen FOV during the dive → exaggerated fisheye
+const FALL_DUR    = 1700;             // ms for the plunge
+let liveCamDist = CAM_HOME, liveFov = CONFIG.fov;   // frame() reads THESE, not CONFIG
+let fallRaw = 0;                      // linear 0 = home → 1 = through the horizon
+let fallDir = 0;                      // +1 entering, -1 climbing back out, 0 idle
+let inLibrary = false;
+
+// ---- Choreographed Back exit: a wormhole-warp zoom-out. The tabs warp away;
+//      when the camera is REFORM_CAM of the way home the black hole starts
+//      scaling up from 0 — horizon, disk and lensing growing together — and
+//      reaches full size exactly as the camera lands and the name + buttons
+//      ease back in. ----
+let exiting = false, exitStart = 0;
+const EXIT_DUR   = 1560;             // ms for the whole warp-out
+const WARP_FOV   = 1.00;             // extra FOV bulge mid-warp → tunnel stretch
+const REFORM_CAM  = 0.28;            // camera fraction home where the hole STARTS scaling up
+const REFORM_FULL = 0.750;            // camera fraction where it reaches FULL size — before landing, so
+                                     // the fully-formed hole looms large (close camera) then the final
+                                     // zoom-out settles it into its home framing = "scaling around the camera"
+let holeScale = 1;                   // 0..1 — scales horizon, disk and lensing strength together
+
 const grainCanvas = document.getElementById("grain");
 const grainCtx    = grainCanvas.getContext("2d");
 grainCanvas.width = 256; grainCanvas.height = 256;
@@ -887,15 +986,22 @@ function frame(now) {
   if (dtMs > 0) fpsAvg += (1000 / dtMs - fpsAvg) * 0.1;
   let nCap = 0, nDisk = 0, nBg = 0;
 
+  // Drive the camera: the choreographed Back exit, or the plunge / home tween.
+  if (exiting) advanceExit(now); else advanceFall(dtMs);
+
   // Hoist hot config values into locals (fewer property lookups per cell).
-  const Rhor = CONFIG.horizon, diskIn = CONFIG.diskInner, diskOut = CONFIG.diskOuter;
-  const diskSpan = diskOut - diskIn;
-  const camDist = CONFIG.camDist, fov = CONFIG.fov, levels = CONFIG.levels;
+  // The hole's scale (0..1 during the warp-out re-formation, 1 otherwise)
+  // multiplies the whole geometry: horizon, disk, photon sphere and the
+  // bending strength grow together, so the hole scales up from nothing.
+  const hs = holeScale, bendK = -1.5 * hs, photonR = 1.5 * hs;
+  const Rhor = CONFIG.horizon * hs, diskIn = CONFIG.diskInner * hs, diskOut = CONFIG.diskOuter * hs;
+  const diskSpan = (diskOut - diskIn) || 1;   // guard: no disk hits possible at hs = 0 anyway
+  const camDist = liveCamDist, fov = liveFov, levels = CONFIG.levels;
   const octaves = CONFIG.octaves, noiseScale = CONFIG.noiseScale, drift = CONFIG.drift;
   const beam = CONFIG.beam, ringGlow = CONFIG.ringGlow, spin = CONFIG.spin;
   const bgGlow = CONFIG.bgGlow, bgScroll = CONFIG.bgScroll;
   const maxSteps = CONFIG.steps, cw = cellW, chh = cellH;
-  reservoirT += (reservoirTarget - reservoirT) * reservoirLerp;
+  if (!exiting) reservoirT += (reservoirTarget - reservoirT) * reservoirLerp;   // exit drives reservoirT directly (re-form)
   if (aboutPending && reservoirT >= 0.5) {   // reveal banner once black hole is half gone
     aboutOverlay.classList.add("open");
     aboutPending = false;
@@ -911,8 +1017,10 @@ function frame(now) {
   // pyN is -1 at the top of the screen -> elevation goes negative -> camera dips below the
   // disk plane and the BOTTOM of the hole opens up; +1 at the bottom reveals the TOP.
   const sense = CONFIG.mouseSense;
-  const elev = CONFIG.camElev + pyN * CONFIG.lookRange * sense;
-  const azim = pxN * CONFIG.parallax * sense;                // subtle horizontal sway
+  // Tidal-shear jitter: a tiny random basis wobble in the last ~200ms of the fall.
+  const jit = (fallDir > 0 && fallRaw > 0.82) ? (fallRaw - 0.82) * 0.12 : 0;
+  const elev = CONFIG.camElev + pyN * CONFIG.lookRange * sense + (jit ? (Math.random()*2-1)*jit : 0);
+  const azim = pxN * CONFIG.parallax * sense + (jit ? (Math.random()*2-1)*jit : 0);   // subtle horizontal sway
 
   // Camera basis: look at the origin from slightly above the disk plane.
   const ce = Math.cos(elev), se = Math.sin(elev), ca = Math.cos(azim), sa = Math.sin(azim);
@@ -991,8 +1099,9 @@ function frame(now) {
         if (r < Rhor) { captured = true; break; }       // fell through the horizon
         if (r < rmin) rmin = r;                          // track closest approach (for the photon ring)
 
-        // Geodesic bending: a = -1.5 · h² · r / |r|⁵  — pull toward the centre.
-        const f = -1.5 * h2 / (r2 * r2 * r);
+        // Geodesic bending: a = -1.5 · hs · h² · r / |r|⁵ — pull toward the centre,
+        // scaled by the hole's current size (hs = 1 in normal operation).
+        const f = bendK * h2 / (r2 * r2 * r);
         const ax = posx * f, ay = posy * f, az = posz * f;
 
         // Step size: large far away, small near the hole (and near the thin disk plane).
@@ -1052,7 +1161,7 @@ function frame(now) {
         const el = Math.asin(uy < -1 ? -1 : uy > 1 ? 1 : uy); // [-pi/2, pi/2]
 
         const amb = fbm((azi + 3) * noiseScale, (el + 3) * noiseScale, t * drift, octaves);
-        const dr = rmin - 1.5;                                // photon sphere ~ 1.5 Rs
+        const dr = rmin - photonR;                            // photon sphere ~ 1.5 Rs (scaled with the hole)
         const rg = ringGlow * (1 - rT) * Math.exp(-dr * dr / 0.4);       // photon-ring halo
         // Always-rendered, dim field: every escaping ray paints faint streaming code.
         const b = ambLUT[(amb * 1023) | 0] * (bgGlow * (1 + rT * 1.5)) + rg;
@@ -1077,6 +1186,9 @@ function frame(now) {
 
   // Push telemetry to the DOM at most ~5x/sec (never per-frame) and only while open.
   if (statsOn && now - lastStatT > 200) { updateTelem(nCap, nDisk, nBg); lastStatT = now; }
+
+  // Rotate the tesseract world (hover drift + drag inertia) while in the library.
+  updateTesseract();
 
   // Draw warm grain overlay while in reservoir mode.
   if (rT > 0.01) drawGrain(rT);
@@ -1127,8 +1239,11 @@ function setAbout(open) {
   }
 }
 $("aboutBtn").addEventListener("click", () => setAbout(true));
-$("reservoirBtn").addEventListener("click", () => setReservoir(true));
-$("reservoirBack").addEventListener("click", () => setReservoir(false));
+$("reservoirBtn").addEventListener("click", startFall);   // plunge → tesseract library
+$("reservoirBack").addEventListener("click", () => {
+  if (inLibrary || document.body.classList.contains("falling")) exitLibrary();
+  else setReservoir(false);
+});
 
 // ---- Project viewer ----
 const PROJECTS = {
@@ -1218,18 +1333,220 @@ function closeProject() {
   projectViewer.classList.remove("open");          // tab scales back down first
   projectViewer.setAttribute("aria-hidden", "true");
   document.body.classList.remove("project-open");
+  if (inLibrary) { reservoirLerp = 0.05; reservoirTarget = 0; }   // ease the dim hole back behind the library
   setTimeout(() => { reassembleCards(); projIframe.src = ""; }, 180);  // then cards fly home
 }
 
 $("proj-viewer-close").addEventListener("click", closeProject);
 document.querySelectorAll(".proj-card").forEach(card => {
   card.addEventListener("click", () => {
+    if (dragMoved) return;                                // ignore the click that ends a drag-orbit
     if (card.classList.contains("placeholder")) return;   // not wired yet
     openProject(card.dataset.project);
   });
 });
 $("about-close").addEventListener("click", () => setAbout(false));
 aboutOverlay.addEventListener("click", e => { if (e.target === aboutOverlay) setAbout(false); });
+
+/* =====================================================================
+   THE FALL → TESSERACT LIBRARY  (Interstellar easter egg)
+
+   Two acts, dispatched from the "Project Reservoir" button:
+     1. The Fall — advanceFall() eases liveCamDist 17 → 2.5, letting the
+        EXISTING Schwarzschild ray-tracer do all the visual work (the
+        shadow grows, the photon ring flares) for the price of one number.
+     2. The Library — a CSS-3D scene layered over the dimmed canvas: the
+        real project row repeated at depth like Cooper's tesseract. Only
+        the front row is real/clickable; the rest are atmospheric echoes.
+   ===================================================================== */
+const fallFlash = $("fall-flash");
+const reservoirBackEl = $("reservoirBack");
+const stageEl = document.querySelector(".stage");
+const controlsEl = document.querySelector(".controls");
+let tesseractBuilt = false, tessWorld = null, tessEl = null;
+
+// World rotation channels: hover drift (ambient) + drag-to-orbit (with inertia).
+let dragRX = 0, dragRY = 0, hoverRX = 0, hoverRY = 0, velRX = 0, velRY = 0;
+let dragging = false, dragMoved = false, lastDragX = 0, lastDragY = 0;
+let worldScale = 1;                  // 1 in the library; shrinks the tabs away during the warp-out
+const HOVER_AMP = 6, DRAG_SENS = 0.28, RX_MAX = 46, DAMP = 0.9;
+// Resting library orientation: tipped a touch from below (−X) and turned (−Y)
+// so every card's depth-stack fans out into view instead of hiding behind it.
+const LIB_RX = -13, LIB_RY = -19;
+
+// Build the 3D scene once, on first fall. The front (real) layer is the
+// existing #reservoir-projects node, re-homed into the world so openProject(),
+// scatter/reassemble and querySelectorAll(".proj-card") all keep working
+// untouched. Echo layers are procedural clones — add a 6th project later and
+// the recursion picks it up for free.
+function buildTesseract() {
+  if (tesseractBuilt) return;
+  const tess = document.createElement("div"); tess.id = "tesseract";
+  const world = document.createElement("div"); world.id = "tesseract-world";
+  tess.appendChild(world);
+
+  const front = reservoirProjects;          // the real, clickable project row
+  front.classList.add("tess-front");
+
+  const ECHO = 8, ZSTEP = -240, YSTEP = -16;   // 8 shelves rising up-and-back → an infinite tower
+  for (let i = 1; i <= ECHO; i++) {
+    const layer = document.createElement("div");
+    layer.className = "tess-layer echo";
+    layer.setAttribute("aria-hidden", "true");      // echoes never intercept AT/clicks
+    layer.style.setProperty("--z", (ZSTEP * i) + "px");
+    layer.style.setProperty("--y", (YSTEP * i) + "px");
+    layer.style.opacity = (0.5 * Math.pow(0.72, i - 1)).toFixed(3);   // exponential falloff
+    layer.style.filter = "saturate(" + Math.max(0.2, 0.72 - 0.08 * i).toFixed(2) + ") "
+                       + "brightness(" + Math.max(0.45, 0.85 - 0.06 * i).toFixed(2) + ") hue-rotate(-12deg)";
+    front.querySelectorAll(".proj-card").forEach(card => {
+      const c = card.cloneNode(true);
+      c.classList.remove("proj-card");              // NOT a .proj-card → never caught by
+      c.classList.add("proj-echo");                 // querySelectorAll(".proj-card")
+      c.removeAttribute("data-project");
+      layer.appendChild(c);
+    });
+    world.appendChild(layer);                        // echoes behind…
+  }
+  world.appendChild(front);                          // …real row last (z = 0, on top)
+  document.body.appendChild(tess);
+  tessWorld = world; tessEl = tess;
+  attachTesseractControls(tess);
+  tesseractBuilt = true;
+}
+
+function attachTesseractControls(tess) {
+  tess.addEventListener("pointerdown", e => {
+    if (!inLibrary || document.body.classList.contains("project-open")) return;
+    dragging = true; dragMoved = false;              // a fresh gesture: assume it's a click…
+    lastDragX = e.clientX; lastDragY = e.clientY;
+    velRX = velRY = 0;
+  });
+  // Move/up on window so the orbit keeps tracking outside the cards' bounds.
+  window.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    const dx = e.clientX - lastDragX, dy = e.clientY - lastDragY;
+    if (Math.abs(dx) + Math.abs(dy) > 2) dragMoved = true;   // …until it moves → it's a drag
+    lastDragX = e.clientX; lastDragY = e.clientY;
+    dragRY += dx * DRAG_SENS; dragRX += -dy * DRAG_SENS;
+    velRY = dx * DRAG_SENS;   velRX = -dy * DRAG_SENS;       // carry velocity into inertia
+  });
+  window.addEventListener("pointerup", () => { dragging = false; });
+}
+
+// Per-frame world transform while in the library (called from frame()).
+function updateTesseract() {
+  if (!inLibrary || !tessWorld) return;
+  if (document.body.classList.contains("project-open")) return;   // freeze behind the viewer
+  hoverRY += (mxN * HOVER_AMP - hoverRY) * 0.04;                   // ambient breeze (reuses pointer)
+  hoverRX += (-myN * HOVER_AMP - hoverRX) * 0.04;
+  if (!dragging) {                                                 // inertia: exponential damping
+    dragRX += velRX; dragRY += velRY;
+    velRX *= DAMP; velRY *= DAMP;
+    if (Math.abs(velRX) < 1e-3) velRX = 0;
+    if (Math.abs(velRY) < 1e-3) velRY = 0;
+  }
+  if (dragRX > RX_MAX) dragRX = RX_MAX; else if (dragRX < -RX_MAX) dragRX = -RX_MAX;   // clamp pitch
+  const rx = dragRX + hoverRX, ry = dragRY + hoverRY;
+  // worldScale shrinks the tabs away during the warp-out exit (1 in the library).
+  tessWorld.style.transform = "rotateX(" + rx.toFixed(2) + "deg) rotateY(" + ry.toFixed(2) + "deg) scale(" + worldScale.toFixed(3) + ")";
+}
+
+// Advance the plunge tween — accelerating ease-in, reversible.
+function advanceFall(dtMs) {
+  if (fallDir !== 0) {
+    fallRaw += fallDir * (Math.min(dtMs, 60) / FALL_DUR);   // clamp dt so tab-switches don't jump
+    if (fallRaw >= 1) { fallRaw = 1; fallDir = 0; onFallComplete(); }
+    else if (fallRaw <= 0) { fallRaw = 0; fallDir = 0; onFallReversed(); }
+  }
+  const fe = fallRaw * fallRaw;                              // quadratic-in: real infall speeds up
+  liveCamDist = CAM_HOME + (CAM_THROUGH - CAM_HOME) * fe;
+  liveFov     = CONFIG.fov + (FOV_THROUGH - CONFIG.fov) * fe;
+}
+
+function triggerFlash() {
+  fallFlash.classList.remove("flash-anim");
+  void fallFlash.offsetWidth;                               // reflow → restart the keyframes
+  fallFlash.classList.add("flash-anim");
+}
+
+function startFall() {
+  if (inLibrary || document.body.classList.contains("falling")) return;
+  buildTesseract();
+  dragRX = LIB_RX; dragRY = LIB_RY; hoverRX = hoverRY = velRX = velRY = 0;   // rest at the angled view
+  worldScale = 1;                                                            // full-size on entry
+  if (tessWorld) tessWorld.style.transform = "rotateX(" + LIB_RX + "deg) rotateY(" + LIB_RY + "deg)";
+  document.body.classList.add("falling");
+  fallRaw = 0; fallDir = 1;
+}
+
+function onFallComplete() {           // crossed the horizon
+  triggerFlash();                     // white flash masks the swap into the library
+  document.body.classList.remove("falling");
+  document.body.classList.add("library");
+  inLibrary = true;
+  // Dissolve the hole into the streaming reservoir code field (the flash hides
+  // the snap); the exit later re-forms it. This IS the library backdrop.
+  reservoirT = reservoirTarget = 1;
+}
+
+function onFallReversed() {           // climbed back out → home
+  document.body.classList.remove("falling");
+}
+
+/* Choreographed Back exit — a seamless wormhole warp home.
+   1. The project tabs warp away (shrink + fade), camera zooming out with a
+      mid-flight FOV bulge stretching the code into a tunnel.
+   2. When the camera is 50% of the way back, the black hole SCALES up from 0:
+      holeScale grows horizon, disk, photon sphere and lensing strength
+      together, so the hole physically inflates out of the streaming code.
+   3. It reaches 100% scale exactly as the camera finds its final position,
+      and the name + buttons ease back in to land on the same beat.
+   Every keyframe is smoothstepped — no linear ramps anywhere. */
+function advanceExit(now) {
+  let p = (now - exitStart) / EXIT_DUR;
+  if (p > 1) p = 1;
+  const camE = smooth(p);                                // smoothstep ease-in-out zoom-out
+  const bulge = Math.sin(Math.PI * p);                   // 0 → 1 → 0 FOV bulge (smooth)
+  liveCamDist = CAM_THROUGH + (CAM_HOME - CAM_THROUGH) * camE;
+  liveFov     = FOV_THROUGH + (CONFIG.fov - FOV_THROUGH) * camE + WARP_FOV * bulge;
+  // Tabs warp away: shrink + fade, smoothstepped.
+  worldScale = 1 - 0.88 * smooth(p);                     // 1 → ~0.12
+  const screenOp = 1 - smooth(Math.min(p / 0.7, 1));
+  tessEl.style.opacity          = screenOp.toFixed(3);
+  reservoirBackEl.style.opacity = screenOp.toFixed(3);
+  // Hole scales 0 → 1 over the camera's second half of the trip, smooth onset.
+  const grow = smooth(Math.max(0, Math.min((camE - REFORM_CAM) / (1 - REFORM_CAM), 1)));
+  holeScale  = grow;                                     // geometry + lensing strength
+  reservoirT = 1 - grow;                                 // integration steps + grain follow the growth
+  // Name + buttons ease back in over the final stretch, landing with the camera.
+  const stageOp = smooth(Math.max(0, (p - 0.78) / 0.22));
+  stageEl.style.opacity    = stageOp.toFixed(3);
+  controlsEl.style.opacity = stageOp.toFixed(3);
+  if (p >= 1) finishExit();
+}
+
+function finishExit() {
+  exiting = false; inLibrary = false;
+  document.body.classList.remove("library", "exiting");
+  tessEl.style.opacity = "";             // hand every inline opacity back to CSS
+  reservoirBackEl.style.opacity = "";
+  stageEl.style.opacity = ""; controlsEl.style.opacity = "";
+  worldScale = 1;                        // reset so the next visit starts full-size
+  holeScale = 1;                         // hole at full size for normal operation
+  liveCamDist = CAM_HOME; liveFov = CONFIG.fov;
+  reservoirT = reservoirTarget = 0;      // hole fully formed, home state
+  fallRaw = 0; fallDir = 0;
+}
+
+function exitLibrary() {
+  if (inLibrary && !exiting) {
+    exiting = true;
+    exitStart = performance.now();
+    document.body.classList.add("exiting");
+  } else if (document.body.classList.contains("falling")) {
+    fallDir = -1;                     // interrupt an in-progress plunge and climb back out
+  }
+}
 
 const sidebar = $("sidebar"), physBtn = $("physBtn"), thorneBtn = $("thorneBtn");
 function setSidebar(open) {
@@ -1251,6 +1568,7 @@ document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (aboutOverlay.classList.contains("open")) { setAbout(false); return; }
   if (projectViewer.classList.contains("open")) { closeProject(); return; }
+  if (inLibrary || document.body.classList.contains("falling")) { exitLibrary(); return; }
   if (document.body.classList.contains("reservoir")) { setReservoir(false); return; }
   if (document.body.classList.contains("thorne")) setThorne(false);
   if (sidebar.classList.contains("open")) setSidebar(false);
