@@ -944,8 +944,12 @@ let inLibrary = false;
 //      ease back in. ----
 let exiting = false, exitStart = 0;
 const EXIT_DUR   = 1950;             // ms for the whole warp-out (was 1560; +25% = 25% slower)
-const WARP_FOV   = 1.00;             // extra FOV bulge mid-warp → tunnel stretch
-const REFORM_CAM  = 0.28;            // camera fraction home where the hole STARTS scaling up
+const WARP_FOV   = 5.00;             // extra FOV bulge mid-warp → tunnel stretch
+const REFORM_CAM  = 0.08;            // camera fraction home where the hole STARTS scaling up. Solved so
+                                     // the hole COMES INTO VIEW ~40% sooner in TIME (≈737ms → ≈442ms
+                                     // into the exit): the camera ease is nonlinear, so this ≈0.08
+                                     // camera-fraction is what yields a 40% cut in the actual time gap.
+                                     // Lower ⇒ hole emerges earlier & larger (more "coming out of it").
 const REFORM_FULL = 0.750;            // camera fraction where it reaches FULL size — before landing, so
                                      // the fully-formed hole looms large (close camera) then the final
                                      // zoom-out settles it into its home framing = "scaling around the camera"
