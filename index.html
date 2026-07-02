@@ -794,7 +794,8 @@ function vhash(ix, iy, iz) {
   n = (n * 1274126177) >>> 0;
   return (n & 0xffffff) / 0x1000000;          // [0,1)
 }
-const smooth = t => t * t * (3 - 2 * t);        // smoothstep
+const smooth = t => t * t * (3 - 2 * t);        // smoothstep (0 velocity at ends)
+const smoother = t => t * t * t * (t * (t * 6 - 15) + 10);   // smootherstep (0 vel AND 0 accel at ends)
 function valueNoise(x, y, z) {
   const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
   const xf = smooth(x - xi), yf = smooth(y - yi), zf = smooth(z - zi);
@@ -942,7 +943,7 @@ let inLibrary = false;
 //      reaches full size exactly as the camera lands and the name + buttons
 //      ease back in. ----
 let exiting = false, exitStart = 0;
-const EXIT_DUR   = 1560;             // ms for the whole warp-out
+const EXIT_DUR   = 1950;             // ms for the whole warp-out (was 1560; +25% = 25% slower)
 const WARP_FOV   = 1.00;             // extra FOV bulge mid-warp → tunnel stretch
 const REFORM_CAM  = 0.28;            // camera fraction home where the hole STARTS scaling up
 const REFORM_FULL = 0.750;            // camera fraction where it reaches FULL size — before landing, so
@@ -1505,8 +1506,10 @@ function onFallReversed() {           // climbed back out → home
 function advanceExit(now) {
   let p = (now - exitStart) / EXIT_DUR;
   if (p > 1) p = 1;
-  const camE = smooth(p);                                // smoothstep ease-in-out zoom-out
-  const bulge = Math.sin(Math.PI * p);                   // 0 → 1 → 0 FOV bulge (smooth)
+  const camE = smoother(p);                              // smootherstep: extra-gentle, slow final settle
+  const s = Math.sin(Math.PI * p);
+  const bulge = s * s;                                   // sin² hump: 0 value AND 0 slope at both ends, so
+                                                         // the FOV eases to a stop instead of snapping still
   liveCamDist = CAM_THROUGH + (CAM_HOME - CAM_THROUGH) * camE;
   liveFov     = FOV_THROUGH + (CONFIG.fov - FOV_THROUGH) * camE + WARP_FOV * bulge;
   // Tabs warp away: shrink + fade, smoothstepped.
