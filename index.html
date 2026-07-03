@@ -937,23 +937,17 @@ let fallRaw = 0;                      // linear 0 = home → 1 = through the hor
 let fallDir = 0;                      // +1 entering, -1 climbing back out, 0 idle
 let inLibrary = false;
 
-// ---- Choreographed Back exit: a wormhole-warp zoom-out. The tabs warp away;
-//      when the camera is REFORM_CAM of the way home the black hole starts
-//      scaling up from 0 — horizon, disk and lensing growing together — and
-//      reaches full size exactly as the camera lands and the name + buttons
-//      ease back in. ----
+// ---- Choreographed Back exit: the camera FALLS BACK OUT of the black hole —
+//      a reverse of the entry Fall. The tabs warp out; when they're 60% warped
+//      the hole has re-materialised around the frame and the camera zooms back
+//      OUT through the event horizon (camDist 2.5 → 17), cinematically settling
+//      where the name + buttons fade in. No geometry scaling — the camera
+//      distance does all the work (the horizon shrinks as you pull away). ----
 let exiting = false, exitStart = 0;
-const EXIT_DUR   = 1950;             // ms for the whole warp-out (was 1560; +25% = 25% slower)
-const WARP_FOV   = 5.00;             // extra FOV bulge mid-warp → tunnel stretch
-const REFORM_CAM  = 0.08;            // camera fraction home where the hole STARTS scaling up. Solved so
-                                     // the hole COMES INTO VIEW ~40% sooner in TIME (≈737ms → ≈442ms
-                                     // into the exit): the camera ease is nonlinear, so this ≈0.08
-                                     // camera-fraction is what yields a 40% cut in the actual time gap.
-                                     // Lower ⇒ hole emerges earlier & larger (more "coming out of it").
-const REFORM_FULL = 0.750;            // camera fraction where it reaches FULL size — before landing, so
-                                     // the fully-formed hole looms large (close camera) then the final
-                                     // zoom-out settles it into its home framing = "scaling around the camera"
-let holeScale = 1;                   // 0..1 — scales horizon, disk and lensing strength together
+const EXIT_DUR   = 1900;             // ms for the whole fall-out
+const REVEAL_END = 0.30;             // black hole is fully visible by this fraction of the pan
+const WARP_MS    = 1000;              // element warp-away duration in ms (capped so it never outlasts the reveal)
+let holeScale = 1;                   // black hole stays FULL size — camDist does the work, no scaling
 
 const grainCanvas = document.getElementById("grain");
 const grainCtx    = grainCanvas.getContext("2d");
@@ -1498,38 +1492,40 @@ function onFallReversed() {           // climbed back out → home
   document.body.classList.remove("falling");
 }
 
-/* Choreographed Back exit — a seamless wormhole warp home.
-   1. The project tabs warp away (shrink + fade), camera zooming out with a
-      mid-flight FOV bulge stretching the code into a tunnel.
-   2. When the camera is 50% of the way back, the black hole SCALES up from 0:
-      holeScale grows horizon, disk, photon sphere and lensing strength
-      together, so the hole physically inflates out of the streaming code.
-   3. It reaches 100% scale exactly as the camera finds its final position,
-      and the name + buttons ease back in to land on the same beat.
-   Every keyframe is smoothstepped — no linear ramps anywhere. */
+/* Choreographed Back exit — the camera falls back OUT of the black hole.
+   Press back and everything moves at once, all monotonic (no bounce): the camera
+   pans out immediately (camDist 2.5 → 17 smootherstep; FOV eases straight
+   0.92 → 0.60), the tabs warp away, and the streaming code resolves into the
+   black hole so it's visible AS the camera pans and then recedes to home size.
+   Elements warp away over WARP_MS (≥500ms), gone before the hole fully blacks;
+   the name + buttons fade
+   in as the camera settles. No geometry scaling — camDist does the work. */
 function advanceExit(now) {
   let p = (now - exitStart) / EXIT_DUR;
   if (p > 1) p = 1;
-  const camE = smoother(p);                              // smootherstep: extra-gentle, slow final settle
-  const s = Math.sin(Math.PI * p);
-  const bulge = s * s;                                   // sin² hump: 0 value AND 0 slope at both ends, so
-                                                         // the FOV eases to a stop instead of snapping still
-  liveCamDist = CAM_THROUGH + (CAM_HOME - CAM_THROUGH) * camE;
-  liveFov     = FOV_THROUGH + (CONFIG.fov - FOV_THROUGH) * camE + WARP_FOV * bulge;
-  // Tabs warp away: shrink + fade, smoothstepped.
-  worldScale = 1 - 0.88 * smooth(p);                     // 1 → ~0.12
-  const screenOp = 1 - smooth(Math.min(p / 0.7, 1));
-  tessEl.style.opacity          = screenOp.toFixed(3);
-  reservoirBackEl.style.opacity = screenOp.toFixed(3);
-  // Hole re-forms as the camera clears the horizon. holeScale is floored at
-  // 0.30 so the instant it's revealed it's already a 30%-formed black hole
-  // (not a zero-size dot growing in), then it inflates the remaining 70% to
-  // full size. The reservoirT fade below is the smooth reveal (code → lensing).
-  const grow = smooth(Math.max(0, Math.min((camE - REFORM_CAM) / (1 - REFORM_CAM), 1)));
-  holeScale  = 0.30 + 0.70 * grow;                      // 30% formed on reveal → 100% at landing
-  reservoirT = 1 - grow;                                 // integration steps + grain follow the growth
-  // Name + buttons ease back in over the final stretch, landing with the camera.
-  const stageOp = smooth(Math.max(0, (p - 0.78) / 0.22));
+
+  // Camera pans out immediately — smooth, monotonic, no hold and no FOV bounce.
+  const camPhase = smoother(p);
+  liveCamDist = CAM_THROUGH + (CAM_HOME - CAM_THROUGH) * camPhase;   // 2.5 → 17
+  liveFov     = FOV_THROUGH + (CONFIG.fov - FOV_THROUGH) * camPhase; // 0.92 → 0.60, monotonic
+
+  // The black hole resolves in as the camera pans (streaming code → lensing),
+  // fully visible by REVEAL_END and then just receding to home size.
+  const reveal = smooth(Math.min(p / REVEAL_END, 1));    // hole visibility 0 → 1
+  reservoirT = 1 - reveal;
+  holeScale  = 1;                                        // full size — camDist does the work
+
+  // Tabs + back button warp away over WARP_MS (≥500ms), capped to the reveal so
+  // they never linger on the fully-black background.
+  const warpFrac = Math.min(WARP_MS / EXIT_DUR, REVEAL_END);
+  const warpAway = smooth(Math.min(p / warpFrac, 1));
+  worldScale = 1 - 0.92 * warpAway;                      // shrink into the hole
+  const tabsOp = 1 - warpAway;                           // …and fade with it
+  tessEl.style.opacity          = tabsOp.toFixed(3);
+  reservoirBackEl.style.opacity = tabsOp.toFixed(3);
+
+  // 3) Name + buttons fade in as the camera settles into its final spot.
+  const stageOp = smooth(Math.max(0, (p - 0.80) / 0.20));
   stageEl.style.opacity    = stageOp.toFixed(3);
   controlsEl.style.opacity = stageOp.toFixed(3);
   if (p >= 1) finishExit();
