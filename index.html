@@ -944,9 +944,10 @@ let inLibrary = false;
 //      where the name + buttons fade in. No geometry scaling — the camera
 //      distance does all the work (the horizon shrinks as you pull away). ----
 let exiting = false, exitStart = 0;
-const EXIT_DUR   = 1900;             // ms for the whole fall-out
-const REVEAL_END = 0.30;             // black hole is fully visible by this fraction of the pan
-const WARP_MS    = 1000;              // element warp-away duration in ms (capped so it never outlasts the reveal)
+const EXIT_DUR   = 2500;             // ms for the whole fall-out
+const REVEAL_D0  = 2.0;              // camDist where the black hole STARTS coming into place (code still up)
+const REVEAL_D1  = 20.0;             // camDist where it's fully in (~30% of screen) and the code has gone
+const WARP_MS    = 1000;             // element warp-away duration in ms
 let holeScale = 1;                   // black hole stays FULL size — camDist does the work, no scaling
 
 const grainCanvas = document.getElementById("grain");
@@ -1509,16 +1510,17 @@ function advanceExit(now) {
   liveCamDist = CAM_THROUGH + (CAM_HOME - CAM_THROUGH) * camPhase;   // 2.5 → 17
   liveFov     = FOV_THROUGH + (CONFIG.fov - FOV_THROUGH) * camPhase; // 0.92 → 0.60, monotonic
 
-  // The black hole resolves in as the camera pans (streaming code → lensing),
-  // fully visible by REVEAL_END and then just receding to home size.
-  const reveal = smooth(Math.min(p / REVEAL_END, 1));    // hole visibility 0 → 1
+  // The ASCII code stays fully up until the camera has panned far enough that
+  // the hole's shadow no longer fills the frame — THEN the black hole resolves
+  // in. Reveal is tied to camDist: over [REVEAL_D0, REVEAL_D1] the code gives
+  // way to the lensed hole, gone once the horizon is ~30% of the screen. Camera
+  // pans monotonically, so this is monotonic too.
+  const reveal = smooth(Math.max(0, Math.min((liveCamDist - REVEAL_D0) / (REVEAL_D1 - REVEAL_D0), 1)));
   reservoirT = 1 - reveal;
   holeScale  = 1;                                        // full size — camDist does the work
 
-  // Tabs + back button warp away over WARP_MS (≥500ms), capped to the reveal so
-  // they never linger on the fully-black background.
-  const warpFrac = Math.min(WARP_MS / EXIT_DUR, REVEAL_END);
-  const warpAway = smooth(Math.min(p / warpFrac, 1));
+  // Tabs + back button warp away over WARP_MS.
+  const warpAway = smooth(Math.min(p / (WARP_MS / EXIT_DUR), 1));
   worldScale = 1 - 0.92 * warpAway;                      // shrink into the hole
   const tabsOp = 1 - warpAway;                           // …and fade with it
   tessEl.style.opacity          = tabsOp.toFixed(3);
