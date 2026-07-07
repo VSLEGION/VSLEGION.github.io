@@ -185,32 +185,56 @@
       transition: opacity 0.4s ease;
     }
     #singularity-overlay.open { opacity: 1; pointer-events: auto; }
-    #singularity-overlay::before {
-      content: ""; position: absolute; inset: 0;
-      background: rgba(4, 2, 9, 0.55);
-      backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
-    }
+    /* NOTE: no backdrop blur here — the streaming ASCII field must stay crisp and
+       keep running on both sides of the channel while this is open. */
+
+    /* The "parting" channel: a dark vertical panel down the middle of the screen. It
+       opens from a centre seam outward (clip-path) so the ASCII field appears to part,
+       with glowing orange edges like a slit cut into the simulation. */
     #singularity-panel {
       position: relative; z-index: 1;
-      width: min(800px, 94vw);
-      max-height: 90vh; overflow-y: auto;
-      background: linear-gradient(135deg,
-        rgba(255,255,255,0.09) 0%,
-        rgba(180,160,255,0.06) 45%,
-        rgba(249,125,21,0.06) 100%);
-      backdrop-filter: blur(28px) saturate(1.5) brightness(1.12);
-      -webkit-backdrop-filter: blur(28px) saturate(1.5) brightness(1.12);
-      border: 1px solid rgba(255,255,255,0.16);
-      border-radius: 5px;
+      width: min(760px, 66vw);
+      height: 96vh;
+      display: flex; flex-direction: column;
+      overflow: hidden;                 /* the inner .sg-scroll handles scrolling */
+      background-color: rgba(6,4,12,0.92);
+      background-image: radial-gradient(120% 70% at 50% 0%, rgba(249,125,21,0.10), transparent 62%);
+      border-left: 1px solid rgba(249,125,21,0.55);
+      border-right: 1px solid rgba(249,125,21,0.55);
+      border-radius: 3px;
       box-shadow:
-        inset 0 1px 0 rgba(255,255,255,0.20),
-        0 8px 48px rgba(0,0,0,0.6),
-        0 0 60px rgba(249,125,21,0.12);
-      padding: 2rem 2.2rem 2.4rem;
-      animation: pixel-open 0.2s steps(6) forwards;
+        inset 24px 0 46px -34px rgba(249,125,21,0.9),
+        inset -24px 0 46px -34px rgba(249,125,21,0.9),
+        inset 0 1px 0 rgba(255,255,255,0.08),
+        0 0 80px rgba(0,0,0,0.5);
       font-family: "JetBrains Mono", ui-monospace, monospace;
       color: #d7e3ff;
     }
+    #singularity-overlay.open #singularity-panel {
+      animation: decode-part 0.5s cubic-bezier(.16,.84,.34,1) both;
+    }
+    @keyframes decode-part {
+      from { clip-path: inset(0 50% 0 50%); opacity: 0.15; }
+      to   { clip-path: inset(0 0 0 0);     opacity: 1; }
+    }
+
+    /* Scroll region + a soft top/bottom fade; the text wipes in top -> bottom on open. */
+    .sg-scroll {
+      flex: 1 1 auto; min-height: 0; overflow-y: auto;
+      padding: 2.4rem 2.2rem 2.8rem;
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30px, #000 calc(100% - 40px), transparent 100%);
+              mask-image: linear-gradient(to bottom, transparent 0, #000 30px, #000 calc(100% - 40px), transparent 100%);
+    }
+    #singularity-overlay.open .sg-scroll {
+      animation: decode-reveal 0.95s 0.34s cubic-bezier(.22,.61,.36,1) both;
+    }
+    @keyframes decode-reveal {
+      from { clip-path: inset(0 0 100% 0); opacity: 0; }
+      to   { clip-path: inset(0 0 0 0);    opacity: 1; }
+    }
+    /* Fade the hero chrome away so both sides show clean streaming code. */
+    body.decode-open .controls,
+    body.thorne.decode-open .exit-hint { opacity: 0; pointer-events: none; transition: opacity .3s ease; }
     #singularity-panel h2 {
       font-family: "Press Start 2P", ui-monospace, monospace;
       font-size: clamp(11px, 1.5vw, 15px);
@@ -224,14 +248,21 @@
       margin: 0 0 0.6rem; max-width: 62ch;
     }
     #singularity-close {
-      position: absolute; top: 12px; right: 14px;
-      background: none; border: 0;
-      color: #8a93ad; font-size: 20px; line-height: 1;
-      cursor: pointer; z-index: 2;
+      position: absolute; top: 10px; right: 12px; z-index: 3;
+      width: 30px; height: 30px; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(20,14,28,0.75);
+      border: 1px solid rgba(249,125,21,0.45);
+      color: #ffb56a; font-size: 13px; line-height: 1;
+      cursor: pointer;
       font-family: "Press Start 2P", ui-monospace, monospace;
-      transition: color 0.1s steps(2);
+      transition: color .12s, background .12s, border-color .12s, box-shadow .12s;
     }
-    #singularity-close:hover { color: #ffd24a; }
+    #singularity-close:hover {
+      color: #fff; background: rgba(249,125,21,0.32);
+      border-color: rgba(249,125,21,0.95);
+      box-shadow: 0 0 14px rgba(249,125,21,0.45);
+    }
 
     .sg-eq { padding: 16px 0; border-top: 1px solid rgba(255,255,255,0.07); }
     .sg-eq .sg-lbl {
@@ -261,8 +292,10 @@
       font-size: 12px; line-height: 1.62; color: #aab6d6;
     }
     .sg-eq .sg-sim b { color: #ffd24a; font-weight: normal; }
-    @media (max-width: 600px) {
-      #singularity-panel { padding: 1.6rem 1.3rem 1.8rem; }
+    @media (max-width: 720px) {
+      /* No room for side channels on phones — go full-bleed. */
+      #singularity-panel { width: 100vw; height: 100vh; border-left: 0; border-right: 0; border-radius: 0; }
+      .sg-scroll { padding: 1.8rem 1.3rem 2rem; }
     }
 
     /* ---- About Me modal ---- */
@@ -648,10 +681,11 @@
   <!-- "Decode the Singularity" — the physics behind the animation -->
   <div id="singularity-overlay" role="dialog" aria-modal="true" aria-labelledby="singularity-title" aria-hidden="true">
     <div id="singularity-panel">
-      <button id="singularity-close" aria-label="Close">✕</button>
+      <button id="singularity-close" aria-label="Close and restore the black hole" title="Restore the black hole">✕</button>
 
+      <div class="sg-scroll">
       <h2 id="singularity-title">Decode the Singularity</h2>
-      <p class="sg-intro">Every glyph on screen is one ray of light, traced backward through curved spacetime. Here is the physics running inside the animation — each equation, what it means, and the job it does per ray, per frame.</p>
+      <p class="sg-intro">Every glyph on screen is one ray of light, traced backward through curved spacetime. This is a comprehensive breakdown of the physics running inside the animation. We'll go through each equation, it's significance, and the job it does per ray, per frame.</p>
 
       <div class="sg-eq">
         <div class="sg-lbl"><span class="sg-num">01</span> Schwarzschild metric</div>
@@ -756,6 +790,7 @@ escapes to large r          ->  background -> faint lensed code</code>
       </div>
 
       <p class="sg-intro" style="margin-top:1.4rem;border-top:1px solid rgba(255,255,255,0.07);padding-top:1.1rem;">≈ 180 integration steps per ray · one ray per character · recomputed every frame — general relativity rendered at 60 fps.</p>
+      </div>
     </div>
   </div>
 
@@ -1051,6 +1086,12 @@ let reservoirTarget = 0, reservoirT = 0;
 let reservoirLerp = 0.025;   // gentle morph for reservoir; About Me bumps this up
 let aboutPending = false;    // banner waits until the black hole is 50% faded
 
+// ---- Decode view: fades the black hole out (so the field becomes plain streaming
+//      code) while the centre "parting" panel is open. Shares the rT fade pathway. ----
+let decodeTarget = 0, decodeT = 0;
+const DECODE_LERP = 0.06;
+const DECODE_LERP_CLOSE = DECODE_LERP * 0.4;   // reform the black hole 40% slower on close
+
 const grainCanvas = document.getElementById("grain");
 const grainCtx    = grainCanvas.getContext("2d");
 grainCanvas.width = 256; grainCanvas.height = 256;
@@ -1096,11 +1137,12 @@ function frame(now) {
   const bgGlow = CONFIG.bgGlow, bgScroll = CONFIG.bgScroll;
   const maxSteps = CONFIG.steps, cw = cellW, chh = cellH;
   reservoirT += (reservoirTarget - reservoirT) * reservoirLerp;
+  decodeT    += (decodeTarget    - decodeT)    * (decodeTarget < decodeT ? DECODE_LERP_CLOSE : DECODE_LERP);
   if (aboutPending && reservoirT >= 0.5) {   // reveal banner once black hole is half gone
     aboutOverlay.classList.add("open");
     aboutPending = false;
   }
-  const rT = reservoirT;
+  const rT = reservoirT > decodeT ? reservoirT : decodeT;
   const escapeR = camDist * 1.3;
   const bMissSq = (diskOut * 1.25) * (diskOut * 1.25);   // impact param beyond which a ray misses everything
 
@@ -1453,7 +1495,14 @@ const singularityOverlay = $("singularity-overlay");
 function setSingularity(open) {
   singularityOverlay.classList.toggle("open", open);
   singularityOverlay.setAttribute("aria-hidden", String(!open));
-  if (open) { singularityOverlay.scrollTop = 0; $("singularity-close").focus(); }
+  document.body.classList.toggle("decode-open", open);
+  decodeTarget = open ? 1 : 0;            // part the field: fade the black hole out / back in
+  if (open) {
+    setSidebar(false);                     // clear telemetry so both sides show clean code
+    const sc = singularityOverlay.querySelector(".sg-scroll");
+    if (sc) sc.scrollTop = 0;
+    $("singularity-close").focus();
+  }
 }
 $("decodeBtn").addEventListener("click", () => setSingularity(true));
 $("singularity-close").addEventListener("click", () => setSingularity(false));
