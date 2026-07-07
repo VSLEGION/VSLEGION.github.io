@@ -774,7 +774,7 @@
       </div>
 
       <div class="sg-eq">
-        <div class="sg-lbl"><span class="sg-num">03</span> Null condition · what makes it light</div>
+        <div class="sg-lbl"><span class="sg-num">03</span> Null condition: what makes light, light</div>
         <code>ds² = 0</code>
         <p>Anything with mass travels a path where ds² &lt; 0. A photon <em>always</em> satisfies ds² = 0 — a "null geodesic". That is the definition of light.</p>
         <p class="sg-sim"><b>In the sim:</b> Impose this on every ray. It's why light bends but never slows or stops.</p>
@@ -789,7 +789,7 @@ L = r² dφ/dλ</code>
       </div>
 
       <div class="sg-eq">
-        <div class="sg-lbl"><span class="sg-num">05</span> Impact parameter · one number decides fate</div>
+        <div class="sg-lbl"><span class="sg-num">05</span> Impact parameter: one number decides ray fate</div>
         <code>b = L / E</code>
         <p>How far off-centre the ray would sail past the hole if space were flat. Large b: it barely feels the hole. Small b: it's doomed to fall in. b determines a photon's destiny.</p>
         <p class="sg-sim"><b>In the sim:</b> in code this becomes <b>h² = |r × v|²</b>, computed once at the camera. Because |v| = 1, that constant is exactly b², the same number driving the integrator.</p>
@@ -817,7 +817,7 @@ L = r² dφ/dλ</code>
       </div>
 
       <div class="sg-eq">
-        <div class="sg-lbl"><span class="sg-num">09</span> Geodesic acceleration · the engine</div>
+        <div class="sg-lbl"><span class="sg-num">09</span> Geodesic acceleration: the engine</div>
         <code><span class="hot">a = −1.5 · h² · r / |r|⁵</span></code>
         <p>This is the entire physics engine. It drops straight out of differentiating the effective potential. There's <em>no</em> Newtonian −GM/r² term — light has no mass for Newton to grab. The factor 1.5 and the inverse-fifth-power pull are pure general relativity.</p>
         <p class="sg-sim"><b>In the sim:</b> applied to every ray, every step. This one tug toward the centre is what turns straight lines into the spiralling, looping geodesics you see on screen.</p>
