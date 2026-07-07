@@ -134,6 +134,170 @@
     .eqs .eq code { display: block; color: #d7e3ff; font-size: 12px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
     .eqs .eq code .hot { color: #ffd24a; }
 
+    /* ---- "Decode the Singularity" trigger button (orange pixel shimmer) ---- */
+    .decode-btn {
+      position: relative; isolation: isolate; overflow: hidden;
+      display: block; width: 100%;
+      margin-top: 22px;
+      cursor: pointer;
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      font-size: 11px; letter-spacing: 0.5px; line-height: 1.5;
+      text-transform: uppercase;
+      color: #ffd24a;
+      background: linear-gradient(135deg, rgba(249,125,21,0.18) 0%, rgba(120,70,20,0.10) 100%);
+      border: 1px solid rgba(249,125,21,0.38);
+      border-radius: 4px;
+      padding: 14px 12px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 0 18px rgba(249,125,21,0.12);
+      transition: color .15s ease, box-shadow .2s ease, border-color .2s ease;
+    }
+
+    /* Orange pixel shimmer (see JS): separated orange squares whose opacities flicker in
+       place; a symmetric envelope brightens them toward BOTH edges and leaves a gap in the
+       middle. z-index:-1 -> above the button fill, below the text; screen blend = glow. */
+    .decode-flame {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      border-radius: 4px;
+      z-index: -1;
+      pointer-events: none;
+      mix-blend-mode: screen;
+      opacity: 0.85;
+    }
+    .decode-btn:hover {
+      color: #fff;
+      border-color: rgba(249,125,21,0.7);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 0 26px rgba(249,125,21,0.35);
+    }
+    /* solid pixel outline keeps the label perfectly legible over the shimmer */
+    #decodeBtn {
+      text-shadow:
+        -1px -1px 0 #180800, 1px -1px 0 #180800, -1px 1px 0 #180800, 1px 1px 0 #180800,
+        0 0 9px rgba(0,0,0,0.9);
+    }
+
+    /* ---- "Decode the Singularity" modal ---- */
+    #singularity-overlay {
+      position: fixed; inset: 0; z-index: 30;
+      display: flex; align-items: center; justify-content: center;
+      padding: 4vh 2vw;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.4s ease;
+    }
+    #singularity-overlay.open { opacity: 1; pointer-events: auto; }
+    /* NOTE: no backdrop blur here — the streaming ASCII field must stay crisp and
+       keep running on both sides of the channel while this is open. */
+
+    /* The "parting" channel: a dark vertical panel down the middle of the screen. It
+       opens from a centre seam outward (clip-path) so the ASCII field appears to part,
+       with glowing orange edges like a slit cut into the simulation. */
+    #singularity-panel {
+      position: relative; z-index: 1;
+      width: min(760px, 66vw);
+      height: 96vh;
+      display: flex; flex-direction: column;
+      overflow: hidden;                 /* the inner .sg-scroll handles scrolling */
+      background-color: rgba(6,4,12,0.92);
+      background-image: radial-gradient(120% 70% at 50% 0%, rgba(249,125,21,0.10), transparent 62%);
+      border-left: 1px solid rgba(249,125,21,0.55);
+      border-right: 1px solid rgba(249,125,21,0.55);
+      border-radius: 3px;
+      box-shadow:
+        inset 24px 0 46px -34px rgba(249,125,21,0.9),
+        inset -24px 0 46px -34px rgba(249,125,21,0.9),
+        inset 0 1px 0 rgba(255,255,255,0.08),
+        0 0 80px rgba(0,0,0,0.5);
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      color: #d7e3ff;
+    }
+    #singularity-overlay.open #singularity-panel {
+      animation: decode-part 0.5s cubic-bezier(.16,.84,.34,1) both;
+    }
+    @keyframes decode-part {
+      from { clip-path: inset(0 50% 0 50%); opacity: 0.15; }
+      to   { clip-path: inset(0 0 0 0);     opacity: 1; }
+    }
+
+    /* Scroll region + a soft top/bottom fade; the text wipes in top -> bottom on open. */
+    .sg-scroll {
+      flex: 1 1 auto; min-height: 0; overflow-y: auto;
+      padding: 2.4rem 2.2rem 2.8rem;
+      -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30px, #000 calc(100% - 40px), transparent 100%);
+              mask-image: linear-gradient(to bottom, transparent 0, #000 30px, #000 calc(100% - 40px), transparent 100%);
+    }
+    #singularity-overlay.open .sg-scroll {
+      animation: decode-reveal 0.95s 0.34s cubic-bezier(.22,.61,.36,1) both;
+    }
+    @keyframes decode-reveal {
+      from { clip-path: inset(0 0 100% 0); opacity: 0; }
+      to   { clip-path: inset(0 0 0 0);    opacity: 1; }
+    }
+    /* Fade the hero chrome away so both sides show clean streaming code. */
+    body.decode-open .controls,
+    body.thorne.decode-open .exit-hint { opacity: 0; pointer-events: none; transition: opacity .3s ease; }
+    #singularity-panel h2 {
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      font-size: clamp(11px, 1.5vw, 15px);
+      color: #ffd24a;
+      margin: 0 0 0.5rem;
+      letter-spacing: 1px;
+      text-shadow: 3px 3px 0 #000, 0 0 12px rgba(255,210,74,0.5);
+    }
+    #singularity-panel .sg-intro {
+      font-size: 12.5px; line-height: 1.7; color: #9aa6c4;
+      margin: 0 0 0.6rem; max-width: 62ch;
+    }
+    #singularity-close {
+      position: absolute; top: 10px; right: 12px; z-index: 3;
+      width: 30px; height: 30px; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(20,14,28,0.75);
+      border: 1px solid rgba(249,125,21,0.45);
+      color: #ffb56a; font-size: 13px; line-height: 1;
+      cursor: pointer;
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      transition: color .12s, background .12s, border-color .12s, box-shadow .12s;
+    }
+    #singularity-close:hover {
+      color: #fff; background: rgba(249,125,21,0.32);
+      border-color: rgba(249,125,21,0.95);
+      box-shadow: 0 0 14px rgba(249,125,21,0.45);
+    }
+
+    .sg-eq { padding: 16px 0; border-top: 1px solid rgba(255,255,255,0.07); }
+    .sg-eq .sg-lbl {
+      display: flex; align-items: baseline; gap: 8px;
+      color: #f97d15; font-size: 10px; letter-spacing: 1.5px;
+      text-transform: uppercase; margin-bottom: 9px;
+    }
+    .sg-eq .sg-num {
+      color: #8a93ad; font-family: "Press Start 2P", ui-monospace, monospace;
+      font-size: 9px; flex-shrink: 0;
+    }
+    .sg-eq code {
+      display: block;
+      background: rgba(0,0,0,0.30);
+      border: 1px solid rgba(249,125,21,0.16);
+      border-radius: 3px;
+      padding: 10px 12px; margin-bottom: 10px;
+      color: #e9f1ff; font-size: 12.5px; line-height: 1.65;
+      white-space: pre-wrap; word-break: break-word;
+      font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    }
+    .sg-eq code .hot { color: #ffd24a; }
+    .sg-eq p { margin: 0 0 7px; font-size: 12.5px; line-height: 1.68; color: #c3cee6; }
+    .sg-eq .sg-sim {
+      margin: 9px 0 0; padding-left: 11px;
+      border-left: 2px solid #f97d15;
+      font-size: 12px; line-height: 1.62; color: #aab6d6;
+    }
+    .sg-eq .sg-sim b { color: #ffd24a; font-weight: normal; }
+    @media (max-width: 720px) {
+      /* No room for side channels on phones — go full-bleed. */
+      #singularity-panel { width: 100vw; height: 100vh; border-left: 0; border-right: 0; border-radius: 0; }
+      .sg-scroll { padding: 1.8rem 1.3rem 2rem; }
+    }
+
     /* ---- About Me modal ---- */
     #about-overlay {
       position: fixed; inset: 0; z-index: 20;
@@ -583,53 +747,124 @@
     <div class="row"><span class="k">Disk inner → outer</span><span class="v" id="t_disko">–</span></div>
     <div class="row"><span class="k">Integration steps</span><span class="v" id="t_steps">–</span></div>
 
-    <details class="eqs">
-      <summary>Gravitational ray equations</summary>
-
-      <div class="eq">
-        <div class="lbl">Spacetime · Schwarzschild metric</div>
-        <code>ds² = −(1 − rs/r)c²dt² + (1 − rs/r)⁻¹dr² + r²dΩ²</code>
-      </div>
-      <div class="eq">
-        <div class="lbl">Conserved angular momentum (per ray)</div>
-        <code>h² = |r × v|²   — set at the camera, constant along the path</code>
-      </div>
-      <div class="eq">
-        <div class="lbl">Photon deflection · integrated every step</div>
-        <code><span class="hot">a = −1.5 · h² · r / |r|⁵</span></code>
-      </div>
-      <div class="eq">
-        <div class="lbl">Symplectic Euler integrator</div>
-        <code>v ← v + a·Δλ
-r ← r + v·Δλ</code>
-      </div>
-      <div class="eq">
-        <div class="lbl">Adaptive step size</div>
-        <code>Δλ = clamp(0.1·|r|, 0.02, 0.6)</code>
-      </div>
-      <div class="eq">
-        <div class="lbl">Event horizon · capture</div>
-        <code>|r| &lt; rs = 1  →  ray falls into the shadow</code>
-      </div>
-      <div class="eq">
-        <div class="lbl">Critical surfaces</div>
-        <code>photon sphere = 1.5 rs
-shadow radius  = 3√3 / 2 ≈ 2.598 rs</code>
-      </div>
-      <div class="eq">
-        <div class="lbl">Accretion-disk intersection</div>
-        <code>y flips sign  ∧  r_in ≤ √(x²+z²) ≤ r_out</code>
-      </div>
-      <div class="eq">
-        <div class="lbl">Relativistic Doppler beaming</div>
-        <code>I ∝ 1 + β ( t̂_orbit · n̂_los )</code>
-      </div>
-      <div class="eq">
-        <div class="lbl">Photon-ring halo</div>
-        <code>glow = exp( −(r_min − 1.5)² / 0.4 )</code>
-      </div>
-    </details>
+    <button class="decode-btn" id="decodeBtn" aria-haspopup="dialog"><canvas class="decode-flame" id="decodeFlame" aria-hidden="true"></canvas>Decode the Singularity</button>
   </aside>
+
+  <!-- "Decode the Singularity" — the physics behind the animation -->
+  <div id="singularity-overlay" role="dialog" aria-modal="true" aria-labelledby="singularity-title" aria-hidden="true">
+    <div id="singularity-panel">
+      <button id="singularity-close" aria-label="Close and restore the black hole" title="Restore the black hole">✕</button>
+
+      <div class="sg-scroll">
+      <h2 id="singularity-title">Decode the Singularity</h2>
+      <p class="sg-intro">Every glyph on screen is one ray of light, traced backward through curved spacetime. This is a comprehensive breakdown of the physics running inside the animation. We'll go through each equation, it's significancete, and the job it does per ray, per frame.</p>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">01</span> Schwarzschild metric</div>
+        <code>ds² = −(1 − rs/r)c²dt² + (1 − rs/r)⁻¹dr² + r²dΩ²</code>
+        <p>The rulebook for distance and time around a non-rotating black hole. Each term says how much a step in time or space really costs once spacetime is curved. At r = rs the time term collapses and the radial term blows up — that breakdown <em>is</em> the event horizon. Far away, rs/r → 0 and it relaxes back into ordinary flat space.</p>
+        <p class="sg-sim"><b>In the sim:</b> everything the tracer does descends from this one equation: the horizon, the photon sphere, and the shape of every bent ray all fall out of it.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">02</span> Horizon radius</div>
+        <code>rs = 2GM / c²</code>
+        <p>The one length scale of the whole problem — double the mass, double the horizon. We measure everything in Schwarzschild units where rs = 1.</p>
+        <p class="sg-sim"><b>In the sim:</b> this is why the telemetry reads clean numbers: horizon <b>1.00 Rs</b>, photon sphere <b>1.50 Rs</b>, shadow <b>2.60 Rs</b>. Fixing rs = 1 strips G, M and c out of every equation the integrator runs.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">03</span> Null condition · what makes it light</div>
+        <code>ds² = 0</code>
+        <p>Anything with mass travels a path where ds² &lt; 0. A photon <em>always</em> satisfies ds² = 0 — a "null geodesic". That is the definition of light.</p>
+        <p class="sg-sim"><b>In the sim:</b> Impose this on every ray. It's why light bends but never slows or stops.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">04</span> Conserved energy &amp; angular momentum</div>
+        <code>E = (1 − rs/r) dt/dλ
+L = r² dφ/dλ</code>
+        <p>The metric doesn't depend on time t or angle φ, and by Noether's theorem every symmetry hands back a constant. Time-symmetry gives energy E; rotational symmetry gives angular momentum L. Both stay fixed along a ray. (λ is an affine parameter, a stand-in clock, since light has no proper time of its own.)</p>
+        <p class="sg-sim"><b>In the sim:</b> conservation is what lets us bend a ray from a single stored constant instead of re-solving the full geometry every step.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">05</span> Impact parameter · one number decides fate</div>
+        <code>b = L / E</code>
+        <p>How far off-centre the ray would sail past the hole if space were flat. Large b: it barely feels the hole. Small b: it's doomed to fall in. b determines a photon's destiny.</p>
+        <p class="sg-sim"><b>In the sim:</b> in code this becomes <b>h² = |r × v|²</b>, computed once at the camera. Because |v| = 1, that constant is exactly b², the same number driving the integrator.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">06</span> Effective potential</div>
+        <code>V_eff(r) = (L² / r²)(1 − rs/r)</code>
+        <p>Feed the null condition back in and the motion collapses to a 1-D problem: a photon rolling against this "hill" built out of curvature. It can only exist where E² ≥ V_eff.</p>
+        <p class="sg-sim"><b>In the sim:</b> the single peak of this hill is what carves the shadow's sharp edge — the make-or-break line between rays that escape and rays that get swallowed.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">07</span> Photon sphere</div>
+        <code>r = 3⁄2 · rs = 1.5 rs</code>
+        <p>The top of the potential hill. Exactly here, light can orbit the hole on a perfect, but unstable circle. It's the 1.50 Rs figure in the panel.</p>
+        <p class="sg-sim"><b>In the sim:</b> rays that graze this radius paint the bright <b>photon ring</b>, the same glowing halo the Event Horizon Telescope photographed.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">08</span> Critical impact parameter</div>
+        <code>b_crit = 3√3 / 2 · rs ≈ 2.598 rs</code>
+        <p>Evaluate the potential at its peak and out drops the sharp divide. b &lt; b_crit -> spiral in and vanish; b &gt; b_crit -> escape, sometimes after looping most of the way around.</p>
+        <p class="sg-sim"><b>In the sim:</b> this is why the dark shadow is bigger than the horizon, <b>2.6 Rs</b> across, not 1 Rs. Gravity drags even near-miss rays inward, fattening the silhouette.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">09</span> Geodesic acceleration · the engine</div>
+        <code><span class="hot">a = −1.5 · h² · r / |r|⁵</span></code>
+        <p>This is the entire physics engine. It drops straight out of differentiating the effective potential. There's <em>no</em> Newtonian −GM/r² term — light has no mass for Newton to grab. The factor 1.5 and the inverse-fifth-power pull are pure general relativity.</p>
+        <p class="sg-sim"><b>In the sim:</b> applied to every ray, every step. This one tug toward the centre is what turns straight lines into the spiralling, looping geodesics you see on screen.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">10</span> Symplectic Euler integration</div>
+        <code>v <- v + a·Δλ
+r <- r + v·Δλ</code>
+        <p>Update the velocity from the acceleration <em>first</em>, then advance the position with the new velocity. This ordering preserves the orbit's geometric structure over the long haul, so rays don't artificially drift or unwind.</p>
+        <p class="sg-sim"><b>In the sim:</b> roughly <b>180 of these steps</b> run per ray, per frame.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">11</span> Adaptive step size</div>
+        <code>Δλ = clamp(0.1·|r|, 0.02, 0.6)</code>
+        <p>Curvature is violent right next to the hole and negligible far away. So the step shrinks where the bending is fierce and stretches where nothing much happens: accuracy where it matters, speed where it doesn't.</p>
+        <p class="sg-sim"><b>In the sim:</b> this is what keeps <b>60 fps</b> reachable. The tracer doesn't waste tiny steps out in empty space.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">12</span> Ray fate: Coloring each glyph</div>
+        <code>|r| &lt; 1                    ->  captured -> black shadow
+y flips ∧ r_in ≤ √(x²+z²) ≤ r_out  ->  disk hit -> bright glyph
+escapes to large r          ->  background -> faint lensed code</code>
+        <p>At every step each ray is tested against three outcomes: it fell through the horizon, it crossed the glowing accretion disk, or it flew off to infinity.</p>
+        <p class="sg-sim"><b>In the sim:</b> this classification is literally what colours each character -> dark, bright, or dim.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">13</span> Relativistic Doppler beaming</div>
+        <code>I ∝ 1 + β ( t̂_orbit · n̂_los )</code>
+        <p>Gas orbits the hole at a large fraction of c. Special relativity then brightens the side sweeping toward you and dims the side racing away. It's a property of the emitting gas, not of the light path.</p>
+        <p class="sg-sim"><b>In the sim:</b> applied once at each disk-hit, hence one side of the disk visibly burns hotter than the other, exactly like real images.</p>
+      </div>
+
+      <div class="sg-eq">
+        <div class="sg-lbl"><span class="sg-num">14</span> Photon-ring glow</div>
+        <code>glow = exp( −(r_min − 1.5)² / 0.4 )</code>
+        <p>For every ray we track its closest approach r_min. Rays that skimmed the photon sphere (r_min ≈ 1.5) earn an extra glow.</p>
+        <p class="sg-sim"><b>In the sim:</b> this paints the thin, bright photon ring hugging the shadow's edge.</p>
+      </div>
+
+      <p class="sg-intro" style="margin-top:1.4rem;border-top:1px solid rgba(255,255,255,0.07);padding-top:1.1rem;">≈ 180 integration steps per ray · one ray per character · recomputed every frame — general relativity rendered at 60 fps.</p>
+      </div>
+    </div>
+  </div>
 
   <!-- About Me modal -->
   <div id="about-overlay" role="dialog" aria-modal="true" aria-labelledby="about-title">
@@ -950,6 +1185,12 @@ const REVEAL_D1  = 20.0;             // camDist where it's fully in (~30% of scr
 const WARP_MS    = 1000;             // element warp-away duration in ms
 let holeScale = 1;                   // black hole stays FULL size — camDist does the work, no scaling
 
+// ---- Decode view: fades the black hole out (so the field becomes plain streaming
+//      code) while the centre "parting" panel is open. Shares the rT fade pathway. ----
+let decodeTarget = 0, decodeT = 0;
+const DECODE_LERP = 0.06;
+const DECODE_LERP_CLOSE = DECODE_LERP * 0.4;   // reform the black hole 40% slower on close
+
 const grainCanvas = document.getElementById("grain");
 const grainCtx    = grainCanvas.getContext("2d");
 grainCanvas.width = 256; grainCanvas.height = 256;
@@ -1002,11 +1243,12 @@ function frame(now) {
   const bgGlow = CONFIG.bgGlow, bgScroll = CONFIG.bgScroll;
   const maxSteps = CONFIG.steps, cw = cellW, chh = cellH;
   if (!exiting) reservoirT += (reservoirTarget - reservoirT) * reservoirLerp;   // exit drives reservoirT directly (re-form)
+  decodeT    += (decodeTarget    - decodeT)    * (decodeTarget < decodeT ? DECODE_LERP_CLOSE : DECODE_LERP);
   if (aboutPending && reservoirT >= 0.5) {   // reveal banner once black hole is half gone
     aboutOverlay.classList.add("open");
     aboutPending = false;
   }
-  const rT = reservoirT;
+  const rT = reservoirT > decodeT ? reservoirT : decodeT;
   const escapeR = camDist * 1.3;
   const bMissSq = (diskOut * 1.25) * (diskOut * 1.25);   // impact param beyond which a ray misses everything
 
@@ -1572,8 +1814,94 @@ function setThorne(on) {
 physBtn.addEventListener("click", () => setSidebar(!sidebar.classList.contains("open")));
 $("sbClose").addEventListener("click", () => setSidebar(false));
 thorneBtn.addEventListener("click", () => setThorne(true));
+
+// ---- "Decode the Singularity" modal ----
+const singularityOverlay = $("singularity-overlay");
+function setSingularity(open) {
+  singularityOverlay.classList.toggle("open", open);
+  singularityOverlay.setAttribute("aria-hidden", String(!open));
+  document.body.classList.toggle("decode-open", open);
+  decodeTarget = open ? 1 : 0;            // part the field: fade the black hole out / back in
+  if (open) {
+    setSidebar(false);                     // clear telemetry so both sides show clean code
+    const sc = singularityOverlay.querySelector(".sg-scroll");
+    if (sc) sc.scrollTop = 0;
+    $("singularity-close").focus();
+  }
+}
+$("decodeBtn").addEventListener("click", () => setSingularity(true));
+$("singularity-close").addEventListener("click", () => setSingularity(false));
+singularityOverlay.addEventListener("click", e => { if (e.target === singularityOverlay) setSingularity(false); });
+
+// ---- Shimmer field on the Decode button ("ultra" style) ----
+(function decodeShimmer() {
+  const cv = $("decodeFlame");
+  if (!cv) return;
+  const ctx = cv.getContext("2d");
+  const CELL = 5;                        // css px per grid cell
+  const SQ = 4;                          // square size -> 1px gutter between squares
+  const R = 255, G = 140, B = 32;        // warm orange (all squares share this)
+  const REACH = 0.5;                    // squares fade to a gap this far in from each edge
+  const MAXA = 0.8;                      // brightest a square ever gets
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let Wc = 0, Hc = 0, cols = 0, rows = 0, cur = null, running = false, raf = 0, last = 0;
+
+  function size() {
+    const r = cv.getBoundingClientRect();
+    if (!r.width) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    Wc = r.width; Hc = r.height;
+    cv.width  = Math.round(Wc * dpr);
+    cv.height = Math.round(Hc * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);   // draw in css px, render at device res
+    cols = Math.ceil(Wc / CELL);
+    rows = Math.ceil(Hc / CELL);
+    cur = new Float32Array(cols * rows);
+    for (let i = 0; i < cur.length; i++) cur[i] = Math.random();
+  }
+  function draw() {
+    ctx.clearRect(0, 0, Wc, Hc);
+    const denom = (cols - 1) || 1;
+    for (let cx = 0; cx < cols; cx++) {
+      // symmetric envelope: brightest at BOTH edges, fading to zero (a gap) in the middle
+      const edge = Math.min(cx / denom, 1 - cx / denom);    // 0 at edges -> 0.5 at centre
+      let env = 1 - edge / REACH;
+      if (env < 0) env = 0;
+      for (let ry = 0; ry < rows; ry++) {
+        const i = cx * rows + ry;
+        cur[i] += (Math.random() - cur[i]) * 0.08;            // ease toward a fresh random target
+        const a = env * cur[i] * MAXA;
+        if (a < 0.015) continue;
+        ctx.fillStyle = "rgba(" + R + "," + G + "," + B + "," + a.toFixed(3) + ")";
+        ctx.fillRect(cx * CELL, ry * CELL, SQ, SQ);
+      }
+    }
+  }
+  function loop(t) {
+    if (!running) return;
+    if (t - last > 33) { draw(); last = t; }   // ~30 fps
+    raf = requestAnimationFrame(loop);
+  }
+  function start() {
+    if (running) return;
+    if (!cols) size();
+    if (!cols) return;                         // still not laid out
+    if (reduce) { draw(); return; }            // single static frame
+    running = true; last = 0; raf = requestAnimationFrame(loop);
+  }
+  function stop() { running = false; cancelAnimationFrame(raf); }
+
+  // Only run while the button is actually visible (the sidebar slides off-screen when
+  // closed, so this pauses the shimmer whenever it can't be seen).
+  if ("IntersectionObserver" in window) {
+    new IntersectionObserver(es => { es[0].isIntersecting ? start() : stop(); }, { threshold: 0.01 })
+      .observe(cv);
+  } else start();
+  addEventListener("resize", () => { if (running) { size(); } });
+})();
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
+  if (singularityOverlay.classList.contains("open")) { setSingularity(false); return; }
   if (aboutOverlay.classList.contains("open")) { setAbout(false); return; }
   if (projectViewer.classList.contains("open")) { closeProject(); return; }
   if (inLibrary || document.body.classList.contains("falling")) { exitLibrary(); return; }
@@ -1587,7 +1915,7 @@ document.addEventListener("click", e => {
   if (document.body.classList.contains("reservoir") &&
       !e.target.closest(".controls") && !e.target.closest(".sidebar") && !e.target.closest(".stage") && !e.target.closest("#project-viewer") && !e.target.closest("#reservoir-projects")) { setReservoir(false); return; }
   if (document.body.classList.contains("thorne") &&
-      !e.target.closest(".controls") && !e.target.closest(".sidebar")) setThorne(false);
+      !e.target.closest(".controls") && !e.target.closest(".sidebar") && !e.target.closest("#singularity-overlay")) setThorne(false);
 });
 </script>
 </body>
