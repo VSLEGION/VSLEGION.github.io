@@ -685,7 +685,7 @@
 
       <div class="sg-scroll">
       <h2 id="singularity-title">Decode the Singularity</h2>
-      <p class="sg-intro">Every glyph on screen is one ray of light, traced backward through curved spacetime. This is a comprehensive breakdown of the physics running inside the animation. We'll go through each equation, it's significance, and the job it does per ray, per frame.</p>
+      <p class="sg-intro">Every glyph on screen is one ray of light, traced backward through curved spacetime. This is a comprehensive breakdown of the physics running inside the animation. We'll go through each equation, it's significancete, and the job it does per ray, per frame.</p>
 
       <div class="sg-eq">
         <div class="sg-lbl"><span class="sg-num">01</span> Schwarzschild metric</div>
@@ -1544,7 +1544,7 @@ singularityOverlay.addEventListener("click", e => { if (e.target === singularity
       if (env < 0) env = 0;
       for (let ry = 0; ry < rows; ry++) {
         const i = cx * rows + ry;
-        cur[i] += (Math.random() - cur[i]) * 0.15;            // ease toward a fresh random target
+        cur[i] += (Math.random() - cur[i]) * 0.08;            // ease toward a fresh random target
         const a = env * cur[i] * MAXA;
         if (a < 0.015) continue;
         ctx.fillStyle = "rgba(" + R + "," + G + "," + B + "," + a.toFixed(3) + ")";
