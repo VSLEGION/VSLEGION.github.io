@@ -22,7 +22,8 @@
     body { font-family: ui-sans-serif, system-ui, "Segoe UI", Arial, sans-serif; }
 
     /* The animation lives here */
-    #field { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; }
+    #field, #field-gpu { position: fixed; inset: 0; display: block; width: 100vw; height: 100vh; }
+    #field-gpu { display: none; }   /* shown only when the WebGPU renderer takes over */
 
     /* ---- Foreground UI (your portfolio chrome) ---- */
     .stage {
@@ -593,8 +594,8 @@
     body.reservoir.project-open #reservoirBack { opacity: 0; pointer-events: none; }
 
     /* ---- Reservoir Mode ---- */
-    #field { transition: filter 1.2s ease; }
-    body.reservoir #field {
+    #field, #field-gpu { transition: filter 1.2s ease; }
+    body.reservoir #field, body.reservoir #field-gpu {
       filter: saturate(2.4) contrast(1.2) brightness(1.1);
     }
     #grain {
@@ -627,6 +628,7 @@
 </head>
 <body>
   <canvas id="field"></canvas>
+  <canvas id="field-gpu"></canvas>   <!-- WebGPU target; replaces #field when the GPU renderer initialises -->
   <canvas id="grain"></canvas>
 
   <!-- Foreground UI: retro pixel headline + buttons, centered over the black hole. -->
@@ -1048,8 +1050,21 @@ function buildAtlas() {
   }
 }
 
+// ---- WebGPU acceleration (optional; transparently falls back to Canvas-2D) ----
+const fieldGpu = document.getElementById("field-gpu");
+let gpu = null;
+function sizeGpuCanvas() { fieldGpu.width = canvas.width; fieldGpu.height = canvas.height; }
+
+// ---- Benchmark instrumentation (rolling CPU cost of each render path) ----
+let forceCPU = false, ms2D = 0, msGPUsubmit = 0;
+window.__setForceCPU = (v) => { forceCPU = !!v; };
+window.__perf = () => ({ fps:+fpsAvg.toFixed(1), ms2D:+ms2D.toFixed(2), msGPUsubmit:+msGPUsubmit.toFixed(3),
+                         forceCPU, gpu: !!gpu, cols, rows, dpr, cells: cols*rows });
+window.__benchGPU = (n) => (gpu ? gpu.benchGPU(n) : Promise.resolve(null));
+
 function resize() {
-  dpr = Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR);   // cap DPR for perf
+  // 2D is DPR-capped for perf; the GPU path has the headroom to render at full DPR (crisper).
+  dpr = Math.min(window.devicePixelRatio || 1, gpu ? 2.5 : CONFIG.maxDPR);
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
@@ -1061,9 +1076,34 @@ function resize() {
   cols = Math.ceil(W / cellW) + 1;
   rows = Math.ceil(H / cellH) + 1;
   buildAtlas();
+  if (gpu) { sizeGpuCanvas(); gpu.setGrid({ cols, rows }); }   // resize/re-upload GPU resources
 }
 window.addEventListener("resize", resize);
 resize();
+
+// Flatten the source-text sampling data once, then try to bring up the GPU renderer.
+const codeData = (() => {
+  const codesFlat = [], lineOffsets = [], lineLens = [];
+  let off = 0;
+  for (const arr of LINE_CODES) {
+    lineOffsets.push(off); lineLens.push(arr.length);
+    for (let i = 0; i < arr.length; i++) codesFlat.push(arr[i]);
+    off += arr.length;
+  }
+  return { codesFlat, lineOffsets, lineLens, charCol: Array.from(charCol) };
+})();
+(async () => {
+  try {
+    const { initWebGPU } = await import("./webgpu-renderer.js");
+    const r = await initWebGPU({ fieldCanvas: fieldGpu, atlasCanvas: atlasBase, codeData });
+    if (r) {
+      gpu = r;
+      resize();                           // re-apply sizing at GPU DPR + guarantee a correct grid
+      fieldGpu.style.display = "block";   // GPU takes over; hide the 2D canvas
+      canvas.style.display = "none";
+    }
+  } catch (e) { console.warn("[webgpu] disabled:", e); }
+})();
 
 // Pointer drives a gentle, eased camera parallax (tilts the view of the hole).
 let mxN = 0, myN = 0;          // raw target in [-1,1]
@@ -1174,6 +1214,25 @@ function frame(now) {
   const ct = Math.cos(tilt), st = Math.sin(tilt);
   const rx = r0x * ct + u0x * st, ry = u0y * st, rz = r0z * ct + u0z * st;   // (r0y = 0)
   const upx = -r0x * st + u0x * ct, upy = u0y * ct, upz = -r0z * st + u0z * ct;
+
+  if (gpu && !forceCPU) {
+    // GPU path: the compute shader does the ray-march per cell, the render pass
+    // draws the glyphs. Same math as the loop below, off the main thread.
+    const _g0 = performance.now();
+    gpu.render({
+      camx, camy, camz, fov, fx, fy, fz, asp,
+      rx, ry, rz, rT, upx, upy, upz, t,
+      Rhor, diskIn, diskOut, diskSpan,
+      beam, ringGlow, spin, drift,
+      bgGlow, bgScroll, noiseScale, contrast: CONFIG.contrast,
+      ambientLow: CONFIG.ambientLow, ambientHigh: CONFIG.ambientHigh, escapeR, bMissSq,
+      cellWDev: cellW * dpr, cellHDev: cellH * dpr, Wdev: canvas.width, Hdev: canvas.height,
+      tileWd, tileHd, atlasCols: atlasChars.length, levels,
+      octaves, fallbackCol: FALLBACK_COL, maxSteps, nLines: LINE_CODES.length,
+    });
+    msGPUsubmit += ((performance.now() - _g0) - msGPUsubmit) * 0.1;
+  } else {
+  const _c0 = performance.now();
 
   // Deep-space backdrop (also paints the event-horizon shadow, since we skip those cells).
   ctx.fillStyle = "#05030a";
@@ -1316,6 +1375,8 @@ function frame(now) {
       ctx.drawImage(atlasBase, col * tileWd, lvl * tileHd, tileWd, tileHd, px, py, cw, chh);
     }
   }
+  ms2D += ((performance.now() - _c0) - ms2D) * 0.1;
+  }   // end else (Canvas-2D path)
 
   // Push telemetry to the DOM at most ~5x/sec (never per-frame) and only while open.
   if (statsOn && now - lastStatT > 200) { updateTelem(nCap, nDisk, nBg); lastStatT = now; }
