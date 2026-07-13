@@ -192,14 +192,9 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
   }
 
-  // Velocity → glyph opacity: rays that whipped past the hole (high |vel|) render
-  // at full opacity; gentle far rays degrade LINEARLY down to a 0.5 floor.
-  let velMag = length(vel);
-  let vop = 0.5 + 0.5 * clamp((velMag - u.fx.x) / max(u.fx.y - u.fx.x, 1e-4), 0.0, 1.0);
-  let opq = u32(clamp(vop, 0.0, 1.0) * 127.0);
-
+  // (velocity-based opacity removed — all glyphs render at full opacity)
   if (skip) { cellBuf[idx] = pack(1u, 0u, 0u, 0u); }
-  else { cellBuf[idx] = pack(0u, u32(lvl), u32(col), opq); }
+  else { cellBuf[idx] = pack(0u, u32(lvl), u32(col), 0u); }
 }
 `;
 
@@ -224,17 +219,14 @@ struct VSOut { @builtin(position) pos: vec4<f32> };
   if (((packed >> 24u) & 1u) != 0u) { return vec4(BACKDROP, 1.0); }   // skip bit only
   let lvl = f32((packed >> 16u) & 0xffu);
   let col = f32(packed & 0xffffu);
-  let op  = f32((packed >> 25u) & 0x7fu) / 127.0;                     // velocity opacity 0.5..1
-
   let tileWd = u.atlas.x; let tileHd = u.atlas.y;
   let lx = frag.x - f32(gx) * cw;
   let ly = frag.y - f32(gy) * chh;
   let ax = i32(col * tileWd + lx * (tileWd / cw));
   let ay = i32(lvl * tileHd + ly * (tileHd / chh));
   let texel = textureLoad(atlasTex, vec2<i32>(ax, ay), 0);
-  // atlas glyphs sit on a transparent background -> composite over the backdrop,
-  // scaled by the per-glyph velocity opacity.
-  return vec4(mix(BACKDROP, texel.rgb, texel.a * op), 1.0);
+  // atlas glyphs sit on a transparent background -> composite over the backdrop.
+  return vec4(mix(BACKDROP, texel.rgb, texel.a), 1.0);
 }
 `;
 
