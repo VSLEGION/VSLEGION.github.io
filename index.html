@@ -1055,6 +1055,10 @@ const fieldGpu = document.getElementById("field-gpu");
 let gpu = null;
 function sizeGpuCanvas() { fieldGpu.width = canvas.width; fieldGpu.height = canvas.height; }
 
+// ---- GPU post/FX tunables (live-editable via window.__fx) ----
+const FX = { velMin: 1.0, velMax: 2.2, bloomStrength: 0.9, bloomThreshold: 0.42 };
+window.__fx = FX;
+
 // ---- Benchmark instrumentation (rolling CPU cost of each render path) ----
 let forceCPU = false, ms2D = 0, msGPUsubmit = 0;
 window.__setForceCPU = (v) => { forceCPU = !!v; };
@@ -1229,6 +1233,7 @@ function frame(now) {
       cellWDev: cellW * dpr, cellHDev: cellH * dpr, Wdev: canvas.width, Hdev: canvas.height,
       tileWd, tileHd, atlasCols: atlasChars.length, levels,
       octaves, fallbackCol: FALLBACK_COL, maxSteps, nLines: LINE_CODES.length,
+      velMin: FX.velMin, velMax: FX.velMax, bloomStrength: FX.bloomStrength, bloomThreshold: FX.bloomThreshold,
     });
     msGPUsubmit += ((performance.now() - _g0) - msGPUsubmit) * 0.1;
   } else {
