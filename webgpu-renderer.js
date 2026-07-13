@@ -36,6 +36,7 @@ struct U {
   atlas : vec4<f32>,   // tileWd, tileHd, atlasCols, levels
   misc  : vec4<f32>,   // octaves, fallbackCol, maxSteps, nLines
   dims  : vec4<f32>,   // cols, rows, atlasW, atlasH
+  fx    : vec4<f32>,   // velMin, velMax, bloomStrength, bloomThreshold
 };
 const PI  : f32 = 3.14159265359;
 const TAU : f32 = 6.28318530718;
@@ -83,7 +84,10 @@ fn getCode(tx: i32, ty: i32) -> i32 {
   let ci = ((tx % m) + m) % m;
   return i32(codesFlat[lineOffsets[u32(li)] + u32(ci)]);
 }
-fn pack(skip: u32, lvl: u32, col: u32) -> u32 { return (skip << 24u) | (lvl << 16u) | (col & 0xffffu); }
+// bits: col 0-15, lvl 16-23, skip 24, opacity 25-31 (0..127)
+fn pack(skip: u32, lvl: u32, col: u32, op: u32) -> u32 {
+  return (op << 25u) | (skip << 24u) | (lvl << 16u) | (col & 0xffffu);
+}
 
 @compute @workgroup_size(8, 8)
 fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -152,7 +156,7 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (r > escapeR && dot(pos, vel) > 0.0) { break; }
   }
 
-  if (captured) { cellBuf[idx] = pack(1u, 0u, 0u); return; }   // shadow -> backdrop
+  if (captured) { cellBuf[idx] = pack(1u, 0u, 0u, 0u); return; }   // shadow -> backdrop
 
   var lvl = 0; var col : i32 = -1; var skip = false;
 
@@ -188,8 +192,14 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
   }
 
-  if (skip) { cellBuf[idx] = pack(1u, 0u, 0u); }
-  else { cellBuf[idx] = pack(0u, u32(lvl), u32(col)); }
+  // Velocity → glyph opacity: rays that whipped past the hole (high |vel|) render
+  // at full opacity; gentle far rays degrade LINEARLY down to a 0.5 floor.
+  let velMag = length(vel);
+  let vop = 0.5 + 0.5 * clamp((velMag - u.fx.x) / max(u.fx.y - u.fx.x, 1e-4), 0.0, 1.0);
+  let opq = u32(clamp(vop, 0.0, 1.0) * 127.0);
+
+  if (skip) { cellBuf[idx] = pack(1u, 0u, 0u, 0u); }
+  else { cellBuf[idx] = pack(0u, u32(lvl), u32(col), opq); }
 }
 `;
 
@@ -211,9 +221,10 @@ struct VSOut { @builtin(position) pos: vec4<f32> };
   let gy = i32(floor(frag.y / chh));
   if (gx < 0 || gy < 0 || gx >= cols || gy >= rows) { return vec4(BACKDROP, 1.0); }
   let packed = cellBuf[u32(gy * cols + gx)];
-  if (((packed >> 24u) & 0xffu) != 0u) { return vec4(BACKDROP, 1.0); }
+  if (((packed >> 24u) & 1u) != 0u) { return vec4(BACKDROP, 1.0); }   // skip bit only
   let lvl = f32((packed >> 16u) & 0xffu);
   let col = f32(packed & 0xffffu);
+  let op  = f32((packed >> 25u) & 0x7fu) / 127.0;                     // velocity opacity 0.5..1
 
   let tileWd = u.atlas.x; let tileHd = u.atlas.y;
   let lx = frag.x - f32(gx) * cw;
@@ -221,8 +232,42 @@ struct VSOut { @builtin(position) pos: vec4<f32> };
   let ax = i32(col * tileWd + lx * (tileWd / cw));
   let ay = i32(lvl * tileHd + ly * (tileHd / chh));
   let texel = textureLoad(atlasTex, vec2<i32>(ax, ay), 0);
-  // atlas glyphs sit on a transparent background -> composite over the backdrop
-  return vec4(mix(BACKDROP, texel.rgb, texel.a), 1.0);
+  // atlas glyphs sit on a transparent background -> composite over the backdrop,
+  // scaled by the per-glyph velocity opacity.
+  return vec4(mix(BACKDROP, texel.rgb, texel.a * op), 1.0);
+}
+`;
+
+// Composite pass: reads the rendered scene texture and adds a slight bloom.
+const WGSL_COMPOSITE = U_STRUCT + /* wgsl */ `
+@group(0) @binding(0) var<uniform> u : U;
+@group(0) @binding(1) var sceneTex : texture_2d<f32>;
+
+struct VSOut { @builtin(position) pos: vec4<f32> };
+@vertex fn vs(@builtin(vertex_index) vi: u32) -> VSOut {
+  var p = array<vec2<f32>, 3>(vec2(-1.0, -1.0), vec2(3.0, -1.0), vec2(-1.0, 3.0));
+  var o: VSOut; o.pos = vec4(p[vi], 0.0, 1.0); return o;
+}
+fn lum(c: vec3<f32>) -> f32 { return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722)); }
+
+@fragment fn fs(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
+  let W = i32(u.grid.z); let H = i32(u.grid.w);
+  let p = vec2<i32>(i32(frag.x), i32(frag.y));
+  let base = textureLoad(sceneTex, p, 0).rgb;
+  let strength = u.fx.z; let thresh = u.fx.w;
+  // slight bloom: gather bright neighbours over a 5x5 tap grid at 2px stride
+  var bloom = vec3<f32>(0.0); var wsum = 0.0;
+  for (var dy = -2; dy <= 2; dy = dy + 1) {
+    for (var dx = -2; dx <= 2; dx = dx + 1) {
+      let q = clamp(p + vec2<i32>(dx * 2, dy * 2), vec2<i32>(0, 0), vec2<i32>(W - 1, H - 1));
+      let s = textureLoad(sceneTex, q, 0).rgb;
+      let b = max(lum(s) - thresh, 0.0);
+      let w = exp(-f32(dx * dx + dy * dy) * 0.4);
+      bloom = bloom + s * b * w; wsum = wsum + w;
+    }
+  }
+  bloom = bloom / max(wsum, 1e-4);
+  return vec4(base + bloom * strength, 1.0);
 }
 `;
 
@@ -257,22 +302,30 @@ export async function initWebGPU(opts) {
   const lensBuf    = mkStorage(new Uint32Array(codeData.lineLens));
   const charColBuf = mkStorage(new Int32Array(codeData.charCol));
 
-  const uniformBuf = device.createBuffer({ size: 12 * 4 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
+  const uniformBuf = device.createBuffer({ size: 13 * 4 * 4, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
 
-  const computeModule = device.createShaderModule({ code: WGSL_COMPUTE });
-  const renderModule  = device.createShaderModule({ code: WGSL_RENDER });
+  const computeModule   = device.createShaderModule({ code: WGSL_COMPUTE });
+  const renderModule    = device.createShaderModule({ code: WGSL_RENDER });
+  const compositeModule = device.createShaderModule({ code: WGSL_COMPOSITE });
+  const SCENE_FORMAT = "rgba8unorm";
   const computePipeline = device.createComputePipeline({ layout: "auto", compute: { module: computeModule, entryPoint: "cs" } });
   const renderPipeline  = device.createRenderPipeline({
     layout: "auto",
     vertex:   { module: renderModule, entryPoint: "vs" },
-    fragment: { module: renderModule, entryPoint: "fs", targets: [{ format }] },
+    fragment: { module: renderModule, entryPoint: "fs", targets: [{ format: SCENE_FORMAT }] },   // -> offscreen sceneTex
+    primitive: { topology: "triangle-list" },
+  });
+  const compositePipeline = device.createRenderPipeline({
+    layout: "auto",
+    vertex:   { module: compositeModule, entryPoint: "vs" },
+    fragment: { module: compositeModule, entryPoint: "fs", targets: [{ format }] },              // sceneTex + bloom -> canvas
     primitive: { topology: "triangle-list" },
   });
 
-  let cellBuf = null, atlasTex = null, computeBG = null, renderBG = null;
+  let cellBuf = null, atlasTex = null, sceneTex = null, computeBG = null, renderBG = null, compositeBG = null;
   let gridCols = 0, gridRows = 0;
   let lastUni = null;                       // remembered for benchGPU()
-  const uniformArr = new Float32Array(12 * 4);
+  const uniformArr = new Float32Array(13 * 4);
 
   function setGrid(g) {
     gridCols = g.cols; gridRows = g.rows;
@@ -311,6 +364,22 @@ export async function initWebGPU(opts) {
         { binding: 6, resource: atlasTex.createView() },
       ],
     });
+
+    // Offscreen scene texture (canvas-sized) that the glyph pass renders into,
+    // so the composite pass can bloom it before presenting to the canvas.
+    sceneTex?.destroy?.();
+    sceneTex = device.createTexture({
+      size: [fieldCanvas.width, fieldCanvas.height],
+      format: SCENE_FORMAT,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+    compositeBG = device.createBindGroup({
+      layout: compositePipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: uniformBuf } },
+        { binding: 1, resource: sceneTex.createView() },
+      ],
+    });
   }
 
   function render(uni) {
@@ -329,18 +398,22 @@ export async function initWebGPU(opts) {
     a[36]=uni.tileWd; a[37]=uni.tileHd; a[38]=uni.atlasCols; a[39]=uni.levels;
     a[40]=uni.octaves; a[41]=uni.fallbackCol; a[42]=uni.maxSteps; a[43]=uni.nLines;
     a[44]=gridCols; a[45]=gridRows; a[46]=atlasCanvas.width; a[47]=atlasCanvas.height;
+    a[48]=uni.velMin; a[49]=uni.velMax; a[50]=uni.bloomStrength; a[51]=uni.bloomThreshold;
     device.queue.writeBuffer(uniformBuf, 0, a);
 
     const enc = device.createCommandEncoder();
+
+    // Pass 1: ray-march per cell -> cellBuf
     const cp = enc.beginComputePass();
     cp.setPipeline(computePipeline);
     cp.setBindGroup(0, computeBG);
     cp.dispatchWorkgroups(Math.ceil(gridCols / 8), Math.ceil(gridRows / 8));
     cp.end();
 
+    // Pass 2: glyphs (with velocity opacity) -> offscreen sceneTex
     const rp = enc.beginRenderPass({
       colorAttachments: [{
-        view: ctx.getCurrentTexture().createView(),
+        view: sceneTex.createView(),
         loadOp: "clear", storeOp: "store",
         clearValue: { r: 5/255, g: 3/255, b: 10/255, a: 1 },
       }],
@@ -349,6 +422,19 @@ export async function initWebGPU(opts) {
     rp.setBindGroup(0, renderBG);
     rp.draw(3);
     rp.end();
+
+    // Pass 3: slight bloom composite -> canvas
+    const comp = enc.beginRenderPass({
+      colorAttachments: [{
+        view: ctx.getCurrentTexture().createView(),
+        loadOp: "clear", storeOp: "store",
+        clearValue: { r: 5/255, g: 3/255, b: 10/255, a: 1 },
+      }],
+    });
+    comp.setPipeline(compositePipeline);
+    comp.setBindGroup(0, compositeBG);
+    comp.draw(3);
+    comp.end();
 
     device.queue.submit([enc.finish()]);
   }
