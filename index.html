@@ -475,15 +475,21 @@
       border: 2px solid #f97d15;
       box-shadow: 6px 6px 0 #000, 0 0 24px rgba(249,125,21,0.25);
       padding: 1.4rem 1.2rem 1.2rem;
-      transition: transform .05s steps(2), box-shadow .05s steps(2), border-color .1s;
+      position: relative;                 /* lets the hovered card lift above its neighbours */
+      transform-origin: center;
+      transition: transform .18s cubic-bezier(.2,.85,.3,1), box-shadow .14s ease, border-color .1s;
       animation: pixel-open .2s steps(6) both;
     }
     .proj-card:hover {
-      transform: translate(-2px,-2px);
-      box-shadow: 8px 8px 0 #000, 0 0 32px rgba(249,125,21,0.45);
+      transform: translate(-2px,-2px) scale(1.03);
+      box-shadow: 10px 12px 0 #000, 0 0 40px rgba(249,125,21,0.5);
       border-color: #ffd24a;
+      z-index: 5;
     }
-    .proj-card:active { transform: translate(4px,4px); box-shadow: 2px 2px 0 #000; }
+    /* Cursor-following magnifier: the feDisplacementMap disc is positioned under the
+       pointer by JS; this class just switches the filter on for the near/hovered card. */
+    .proj-card.lens-on { filter: url(#lens-bulge); z-index: 5; }
+    .proj-card:active { transform: translate(3px,3px) scale(1.01); box-shadow: 2px 2px 0 #000; }
 
     .proj-card-title {
       font-family: "Press Start 2P", ui-monospace, monospace;
@@ -922,6 +928,100 @@ escapes to large r          ->  background -> faint lensed code</code>
       </div>
     </div>
   </div>
+
+  <!-- Cursor-following "magnifying glass" for project tabs. A small convex-lens
+       disc (a displacement normal-map, transparent outside the disc) is composited
+       over a neutral field and positioned under the pointer by JS; feDisplacementMap
+       then bulges only that local patch of the hovered / near card. -->
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute;overflow:hidden">
+    <filter id="lens-bulge" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feFlood flood-color="rgb(128,128,128)" result="neutral"/>
+      <feImage id="lens-map" result="disc" preserveAspectRatio="none" width="132" height="132" x="-9999" y="-9999"/>
+      <feMerge result="map"><feMergeNode in="neutral"/><feMergeNode in="disc"/></feMerge>
+      <!-- scale = magnifier strength; raise for a rounder/heavier loupe, lower for subtle -->
+      <feDisplacementMap in="SourceGraphic" in2="map" scale="0" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </svg>
+  <script>
+  (function () {
+    "use strict";
+    const N = 132, R = N / 2;              // lens disc size in local px (bigger N = wider loupe)
+    const FEATHER = 0.34;                  // soft rim: fraction of the radius the lens fades over
+    // Build the convex-lens disc: inward displacement (magnify) that eases to 0 at
+    // the rim, transparent outside the circle, alpha-feathered so it blends cleanly.
+    const cv = document.createElement("canvas"); cv.width = cv.height = N;
+    const g = cv.getContext("2d"), img = g.createImageData(N, N), d = img.data;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const dx = x - R + 0.5, dy = y - R + 0.5, rr = Math.hypot(dx, dy) / R, i = (y * N + x) * 4;
+      if (rr >= 1) { d[i + 3] = 0; continue; }                       // outside disc -> neutral
+      const nx = dx / R, ny = dy / R;
+      const fs = 1 - FEATHER;                                        // where the soft rim begins
+      const e = rr < fs ? 1 : 1 - (rr - fs) / FEATHER;
+      const w = e * e * (3 - 2 * e);                                 // smoothstep: gradual, no hard edge
+      d[i]     = Math.max(0, Math.min(255, 128 - nx * w * 127));     // R = inward x displacement
+      d[i + 1] = Math.max(0, Math.min(255, 128 - ny * w * 127));     // G = inward y displacement
+      d[i + 2] = 128;
+      // Opacity feathers on the SAME curve as the magnification, so the lens
+      // dissolves into the card instead of ending on a visible ring.
+      d[i + 3] = Math.max(0, Math.min(255, Math.round(w * 255)));
+    }
+    g.putImageData(img, 0, 0);
+    document.getElementById("lens-map").setAttribute("href", cv.toDataURL());
+
+    // Driver: activate the nearest tab within PROX px of the pointer, and place the
+    // lens under the cursor in that card's LOCAL space (rect ratio handles any scale).
+    const PROX = 40, MAX_SCALE = 44;       // MAX_SCALE = bulge amount; PROX = "close enough" radius
+    const dm = document.querySelector("#lens-bulge feDisplacementMap");
+    const feimg = document.getElementById("lens-map");
+    let activeCard = null, cur = 0, target = 0, raf = 0;
+
+    const cards = () => {
+      if (document.body.classList.contains("project-open")) return [];
+      if (!document.body.classList.contains("reservoir") && !document.body.classList.contains("library")) return [];
+      return [...document.querySelectorAll(".proj-card:not(.placeholder)")];
+    };
+    function nearest(px, py) {
+      let best = null, bd = Infinity;
+      for (const c of cards()) {
+        const r = c.getBoundingClientRect();
+        const ex = Math.max(r.left - px, 0, px - r.right), ey = Math.max(r.top - py, 0, py - r.bottom);
+        const dd = Math.hypot(ex, ey);
+        if (dd < bd) { bd = dd; best = { c, r }; }
+      }
+      return best && bd <= PROX ? best : null;
+    }
+    function setActive(c) {
+      if (c === activeCard) return;
+      if (activeCard) activeCard.classList.remove("lens-on");
+      activeCard = c;
+      if (c) c.classList.add("lens-on");
+    }
+    function tick() {
+      raf = 0;
+      cur += (target - cur) * 0.28;
+      if (Math.abs(cur - target) < 0.15) cur = target;
+      dm.setAttribute("scale", cur.toFixed(2));
+      if (cur === 0 && target === 0) setActive(null);      // fully off -> drop the filter
+      if (cur !== target) schedule();
+    }
+    function schedule() { if (!raf) raf = requestAnimationFrame(tick); }
+
+    window.addEventListener("pointermove", (e) => {
+      const hit = nearest(e.clientX, e.clientY);
+      if (hit) {
+        setActive(hit.c);
+        const r = hit.r, sx = (hit.c.offsetWidth / r.width) || 1, sy = (hit.c.offsetHeight / r.height) || 1;
+        const lx = (e.clientX - r.left) * sx, ly = (e.clientY - r.top) * sy;   // pointer -> card local px
+        feimg.setAttribute("x", (lx - R).toFixed(1));
+        feimg.setAttribute("y", (ly - R).toFixed(1));
+        target = MAX_SCALE;
+      } else {
+        target = 0;                                        // no tab near -> ease the lens away
+      }
+      schedule();
+    }, { passive: true });
+  })();
+  </script>
 
   <!-- Reservoir project grid -->
   <div id="reservoir-projects">
@@ -2077,10 +2177,10 @@ const CONFIG = {
   noiseScale: 2.4, noiseTime: 0.22, octaves: 3, contrast: 1.7,
   ambientLow: 0.10, ambientHigh: 0.60,
   heatRadius: 150, heatGain: 1.0,
-  lensRadius: 175, lensMag: 0.55, cursorEase: 0.12,
+  lensRadius: 175, lensMag: 0.55, cursorEase: 0.1,
   pan: 0.08,                     // eased spatial parallax: the field drifts with the pointer
   caStrength: 5, caRadius: 100, caSmoke: 1.7, caSmokeFreq: 0.012,
-  caDrift: 0.5, caEdge: 0.9, caAlpha: 0.55,
+  caDrift: 5, caEdge: 0.9, caAlpha: 0.55,
   levels: 26,
   palette: [
     [27,18,34],[40,11,84],[101,21,110],[159,42,99],
@@ -2239,6 +2339,11 @@ function frame(now) {
 
   lcx += (mxPx - lcx) * CONFIG.cursorEase; lcy += (myPx - lcy) * CONFIG.cursorEase;
 
+  // Lens + chromatic aberration lock to the RAW cursor (zero lag) so the glass
+  // sits exactly under the pointer. The eased lcx/lcy is kept only for the
+  // subtle whole-field parallax drift below.
+  const cx = mxPx, cy = myPx;
+
   // Eased spatial parallax: the whole field drifts opposite the (already-eased)
   // pointer, giving the backdrop depth/motion like the main black-hole view.
   const pan = CONFIG.pan;
@@ -2252,11 +2357,11 @@ function frame(now) {
   let i = 0;
   for (let gy = 0; gy < rows; gy++) {
     for (let gx = 0; gx < cols; gx++, i++) {
-      const px = gx * cw, py = gy * chh, ldx = px - lcx, ldy = py - lcy, ld2 = ldx * ldx + ldy * ldy;
+      const px = gx * cw, py = gy * chh, ldx = px - cx, ldy = py - cy, ld2 = ldx * ldx + ldy * ldy;
       let dist, ang0, distPow;
       if (ld2 < lensR2) {
         const r = Math.sqrt(ld2) / lensR, scale = 1 - lensMag * (1 - smooth(r));
-        const u = (lcx + ldx * scale) / cw / cols, v = (lcy + ldy * scale) / chh / rows;
+        const u = (cx + ldx * scale) / cw / cols, v = (cy + ldy * scale) / chh / rows;
         const nx = (u - 0.5) * asp, ny = (v - 0.5);
         dist = Math.sqrt(nx * nx + ny * ny); ang0 = Math.atan2(ny, nx); distPow = Math.pow(dist, swirlPow);
       } else { dist = gDist[i]; ang0 = gAng[i]; distPow = gDistPow[i]; }
@@ -2280,7 +2385,7 @@ function frame(now) {
   const caStrength = CONFIG.caStrength * zoomInv, caSmoke = CONFIG.caSmoke, caSmokeFreq = CONFIG.caSmokeFreq / zoomInv,
         caDrift = CONFIG.caDrift, caEdge = CONFIG.caEdge, caAlpha = CONFIG.caAlpha, caRadius = caR;
   for (let k = 0; k < caCode.length; k++) {
-    const px = caX[k], py = caY[k], dx = px - lcx, dy = py - lcy, d2 = dx * dx + dy * dy, d = Math.sqrt(d2) || 0.0001;
+    const px = caX[k], py = caY[k], dx = px - cx, dy = py - cy, d2 = dx * dx + dy * dy, d = Math.sqrt(d2) || 0.0001;
     const fall = Math.exp(-d2 * caInv2), r = d / caRadius, edge = (r < 1) ? caEdge * 4 * r * (1 - r) : 0, mag = fall + edge;
     const n = fbm(px * caSmokeFreq, py * caSmokeFreq, tCA * caDrift, 2), rot = (n - 0.5) * Math.PI * caSmoke;
     const cr = Math.cos(rot), sr = Math.sin(rot), ux = dx / d, uy = dy / d;
@@ -2299,7 +2404,7 @@ function start() {
   active = true; pending = true;
   resize();
   epoch = performance.now();      // rewind the animation clock: swirl replays from phase zero
-  lcx = W / 2; lcy = H / 2;       // lens re-centres, then eases out to the cursor — as at load
+  lcx = W / 2; lcy = H / 2;       // parallax drift re-centres (lens/CA track the raw cursor directly)
   requestAnimationFrame(frame);
 }
 function stop() { active = false; }
