@@ -2219,10 +2219,13 @@ resize();
 let mxPx = W / 2, myPx = H / 2, lcx = W / 2, lcy = H / 2;
 window.addEventListener("pointermove", e => { mxPx = e.clientX; myPx = e.clientY; });
 
-let active = false, pending = false;
+let active = false, pending = false, epoch = 0;
 function frame(now) {
   pending = false;
-  const t = now * 0.001 * CONFIG.speed, tCA = now * 0.001, asp = W / H;
+  // Time is measured from the last start(), so every Project Reservoir entry
+  // replays the swirl from its initial state instead of joining mid-rotation.
+  const tl = now - epoch;
+  const t = tl * 0.001 * CONFIG.speed, tCA = tl * 0.001, asp = W / H;
   // Cursor-space radii are in CSS px, so they scale with zoomInv to stay
   // physically matched to the zoom-normalized glyphs.
   const heatR = CONFIG.heatRadius * zoomInv, caR = CONFIG.caRadius * zoomInv;
@@ -2291,7 +2294,14 @@ function frame(now) {
   if (active && !document.hidden) { pending = true; requestAnimationFrame(frame); }
 }
 
-function start() { if (active) return; active = true; pending = true; resize(); requestAnimationFrame(frame); }
+function start() {
+  if (active) return;
+  active = true; pending = true;
+  resize();
+  epoch = performance.now();      // rewind the animation clock: swirl replays from phase zero
+  lcx = W / 2; lcy = H / 2;       // lens re-centres, then eases out to the cursor — as at load
+  requestAnimationFrame(frame);
+}
 function stop() { active = false; }
 document.addEventListener("visibilitychange", () => { if (active && !document.hidden && !pending) { pending = true; requestAnimationFrame(frame); } });
 window.reservoirSwirl = { start, stop, resize };
