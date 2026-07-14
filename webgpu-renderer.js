@@ -247,11 +247,13 @@ fn lum(c: vec3<f32>) -> f32 { return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722)); 
   let p = vec2<i32>(i32(frag.x), i32(frag.y));
   let base = textureLoad(sceneTex, p, 0).rgb;
   let strength = u.fx.z; let thresh = u.fx.w;
-  // slight bloom: gather bright neighbours over a 5x5 tap grid at 2px stride
+  // slight bloom: gather bright neighbours over a 3x3 tap grid at 3px stride
+  // (9 taps ~= same glow radius as the old 5x5/2px kernel, ~2.8x fewer texture
+  // loads per pixel — this is the dominant per-pixel cost, so it drives smoothness)
   var bloom = vec3<f32>(0.0); var wsum = 0.0;
-  for (var dy = -2; dy <= 2; dy = dy + 1) {
-    for (var dx = -2; dx <= 2; dx = dx + 1) {
-      let q = clamp(p + vec2<i32>(dx * 2, dy * 2), vec2<i32>(0, 0), vec2<i32>(W - 1, H - 1));
+  for (var dy = -1; dy <= 1; dy = dy + 1) {
+    for (var dx = -1; dx <= 1; dx = dx + 1) {
+      let q = clamp(p + vec2<i32>(dx * 3, dy * 3), vec2<i32>(0, 0), vec2<i32>(W - 1, H - 1));
       let s = textureLoad(sceneTex, q, 0).rgb;
       let b = max(lum(s) - thresh, 0.0);
       let w = exp(-f32(dx * dx + dy * dy) * 0.4);
