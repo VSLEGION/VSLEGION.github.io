@@ -378,6 +378,23 @@
     #about-panel .about-text .hl { color: #f97d15; }
     #about-panel .about-text .hl2 { color: #ffd24a; }
 
+    /* Résumé + GitHub actions row */
+    #about-panel .about-actions {
+      display: flex; flex-wrap: wrap; gap: 0.9rem; margin-top: 1.7rem;
+    }
+    #about-panel .about-btn {
+      font-family: "Press Start 2P", ui-monospace, monospace;
+      text-transform: uppercase; font-size: 10px; letter-spacing: 1px;
+      color: #0a0612; background: #ffffff;
+      border: 0; border-radius: 0; padding: 12px 14px;
+      cursor: pointer; text-decoration: none; display: inline-block; line-height: 1.4;
+      box-shadow: 4px 4px 0 #000, 0 0 18px rgba(249,125,21,0.28);
+      transition: transform .05s steps(2), box-shadow .05s steps(2), background .05s;
+    }
+    #about-panel .about-btn:hover  { transform: translate(2px,2px); box-shadow: 2px 2px 0 #000, 0 0 18px rgba(249,125,21,0.42); background: #ffd24a; }
+    #about-panel .about-btn:active { transform: translate(4px,4px); box-shadow: 0 0 0 #000, 0 0 18px rgba(249,125,21,0.42); }
+    #about-panel .about-btn:focus-visible { outline: 3px solid #ffd24a; outline-offset: 3px; }
+
     #about-panel .about-photo {
       display: flex;
       flex-direction: column;
@@ -888,6 +905,13 @@ escapes to large r          ->  background -> faint lensed code</code>
         <p>I've always been the kind of kid who wanted to know what happens if you push something just a little too far. What a flame does right before it tips into chaos. What ice actually does to a wing in the middle of a flight. How heat moves through a material nobody else bothered to model properly. That curiosity never really grew up. It just got <span class="hl2">better tools</span>.</p>
         <p>These days I build <span class="hl">simulations of weird, specific physical phenomena</span>, mostly because watching something almost break in a controlled way is, to me, deeply satisfying. And the same instinct shows up everywhere else in my life, only smaller. I'll spend an entire evening untangling one stubborn bug in a game I'm designing, or re-rendering a single VFX shot for the eighth time because the light still isn't sitting quite right, or staring down a chessboard fully convinced that this is the game I finally win. It never is, but I appreciate my own optimism.</p>
         <p>I grew up gaming and never stopped. I play music when my brain needs to do something other than physics for a while. I lift weights mostly so I have a good reason to eat more. None of it is especially serious. It's all just the same quiet itch, really. <span class="hl2">Build the small weird world, push on it, and see what it does.</span></p>
+
+        <div class="about-actions">
+          <!-- RESUME: PDF lives in the repo root next to index.html -->
+          <a class="about-btn" id="resumeBtn" href="Vaishanth_Srinivasan_Resume.pdf" download>Download Résumé</a>
+          <!-- GITHUB: replace the href below with your GitHub profile URL -->
+          <a class="about-btn" id="githubBtn" href="https://github.com/VSLEGION" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+        </div>
       </div>
 
       <div class="about-photo">
@@ -908,6 +932,10 @@ escapes to large r          ->  background -> faint lensed code</code>
     <div class="proj-card" data-project="dora">
       <div class="proj-card-title">Dora<br>The<br>Pathfinder</div>
       <div class="proj-card-tag">A* Search · Fuel-Optimal UAV</div>
+    </div>
+    <div class="proj-card" data-href="https://vslegion.github.io/DeJong-Strange-Attractors/">
+      <div class="proj-card-title">DeJong<br>Strange<br>Attractors</div>
+      <div class="proj-card-tag">Chaos · Peter de Jong Attractor Field ↗</div>
     </div>
     <div class="proj-card placeholder" aria-disabled="true">
       <div class="proj-card-title">RDRE<br>CFD</div>
@@ -1662,6 +1690,10 @@ document.querySelectorAll(".proj-card").forEach(card => {
   card.addEventListener("click", () => {
     if (dragMoved) return;                                // ignore the click that ends a drag-orbit
     if (card.classList.contains("placeholder")) return;   // not wired yet
+    if (card.dataset.href) {                              // external project → open in a new tab
+      window.open(card.dataset.href, "_blank", "noopener,noreferrer");
+      return;
+    }
     openProject(card.dataset.project);
   });
 });
