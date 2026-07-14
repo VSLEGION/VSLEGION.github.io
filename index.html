@@ -450,7 +450,7 @@
     /* scatter / reassemble are driven by the Web Animations API (see JS) */
     body.project-open #reservoir-projects { pointer-events: none; }
 
-    .proj-card {
+    .proj-card, .proj-echo {
       width: 240px;
       cursor: pointer;
       background-color: #0b0716;
@@ -594,7 +594,7 @@
     body.reservoir.project-open #reservoirBack { opacity: 0; pointer-events: none; }
 
     /* ---- Reservoir Mode ---- */
-    #field, #field-gpu { transition: filter 1.2s ease; }
+    #field, #field-gpu { transition: filter 1.2s ease, opacity .6s ease; }
     body.reservoir #field, body.reservoir #field-gpu {
       filter: saturate(2.4) contrast(1.2) brightness(1.1);
     }
@@ -624,12 +624,94 @@
       opacity: 0; pointer-events: none; transition: opacity .4s ease; z-index: 7;
     }
     body.thorne .exit-hint { opacity: 1; }
+
+    /* =========================================================
+       The Fall → Tesseract Library (Interstellar easter egg)
+       ========================================================= */
+
+    /* White flash frame at the horizon crossing — hides the DOM swap. */
+    #fall-flash {
+      position: fixed; inset: 0; z-index: 30;
+      background: #737373; opacity: 0; pointer-events: none;
+    }
+    #fall-flash.flash-anim { animation: fall-flash .30s ease-out; }
+    @keyframes fall-flash { 0% { opacity: 0; } 30% { opacity: .9; } 100% { opacity: 0; } }
+
+    /* During the fall AND inside the library, the hero chrome is gone
+       (pointer parallax keeps working — it's a window listener). */
+    body.falling  .stage,    body.library  .stage    { opacity: 0; pointer-events: none; }
+    body.falling  .controls, body.library  .controls { opacity: 0; pointer-events: none; }
+
+    /* The library backdrop IS the reservoir animation: the black hole dissolves
+       (reservoirT → 1, driven in JS) into the flowing, saturated field of
+       streaming code — the same effect the "Project Reservoir" button gives on
+       main. On Back it re-forms (reservoirT → 0) as the camera zooms out. */
+    body.library #field { filter: saturate(2.4) contrast(1.2) brightness(1.1); }
+    body.library #grain { opacity: 0.5; }
+    /* Swirl flow-field library backdrop: above the black hole, below the tabs.
+       Fades in with the library; the instant Back is pressed (.exiting) it fades
+       out so the black hole's rollback animation plays underneath, untouched. */
+    #reservoir-swirl {
+      position: fixed; inset: 0; z-index: 2;
+      opacity: 0; pointer-events: none; transition: opacity .45s ease;
+    }
+    body.library:not(.exiting) #reservoir-swirl { opacity: 1; }
+
+    /* During the choreographed Back exit, JS drives the tab opacities frame-by-
+       frame, so CSS transitions must not smear them. */
+    body.exiting #tesseract, body.exiting #reservoirBack,
+    body.exiting #reservoir-swirl,
+    body.exiting .stage, body.exiting .controls { transition: none !important; }
+
+    /* Slightly smaller cards inside the tesseract so all five stacks sit in
+       one row and their depth-recursion stays visible at the angled view. */
+    #tesseract .proj-card, #tesseract .proj-echo { width: 200px; }
+
+    /* Back button follows the library the way it follows reservoir mode. */
+    body.library #reservoirBack { opacity: 1; pointer-events: auto; }
+    body.library.project-open #reservoirBack { opacity: 0; pointer-events: none; }
+
+    /* The CSS-3D scene layered over the canvas. */
+    #tesseract {
+      position: fixed; inset: 0; z-index: 3;
+      perspective: 1200px; perspective-origin: 50% 45%;
+      opacity: 0; pointer-events: none;
+      transition: opacity .55s ease;
+      touch-action: none;                 /* let drag-orbit own touch gestures */
+    }
+    body.library #tesseract { opacity: 1; pointer-events: auto; }
+    body.library.project-open #tesseract { pointer-events: none; }
+
+    #tesseract-world {
+      position: absolute; inset: 0;
+      transform-style: preserve-3d;
+      transform: rotateX(0deg) rotateY(0deg);
+      will-change: transform;
+    }
+
+    /* Each shelf of the tesseract: the same project row repeated at depth.
+       The real (front) row is #reservoir-projects itself, re-homed here. */
+    .tess-layer, #reservoir-projects.tess-front {
+      position: absolute; inset: auto; top: 50%; left: 50%;   /* inset first — it's shorthand for top/left */
+      width: min(1180px, 94vw);
+      margin: 0; padding: 0;
+      display: flex; gap: 2rem; flex-wrap: wrap;
+      align-items: center; justify-content: center;
+      transform: translate(-50%, calc(-50% + var(--y, 0px))) translateZ(var(--z, 0px));
+      transition: opacity .32s ease;
+    }
+    .tess-layer.echo { pointer-events: none; }         /* echoes are atmosphere only */
+    body.library #reservoir-projects.tess-front { opacity: 1; pointer-events: auto; }
+
+    /* Exit: echoes collapse/fade first, then the fall reverses. */
+    body.tess-collapsing .tess-layer.echo { opacity: 0 !important; }
   </style>
 </head>
 <body>
   <canvas id="field"></canvas>
   <canvas id="field-gpu"></canvas>   <!-- WebGPU target; replaces #field when the GPU renderer initialises -->
   <canvas id="grain"></canvas>
+  <canvas id="reservoir-swirl"></canvas>   <!-- library backdrop: swirl flow field, shown only in the library -->
 
   <!-- Foreground UI: retro pixel headline + buttons, centered over the black hole. -->
   <div class="stage">
@@ -862,6 +944,9 @@ escapes to large r          ->  background -> faint lensed code</code>
 
   <div class="exit-hint">Thorne Mode — press Esc or click to exit</div>
 
+  <!-- Full-screen flash covering the horizon crossing (Fall → Library swap) -->
+  <div id="fall-flash"></div>
+
 <script>
 "use strict";
 
@@ -956,7 +1041,8 @@ function vhash(ix, iy, iz) {
   n = (n * 1274126177) >>> 0;
   return (n & 0xffffff) / 0x1000000;          // [0,1)
 }
-const smooth = t => t * t * (3 - 2 * t);        // smoothstep
+const smooth = t => t * t * (3 - 2 * t);        // smoothstep (0 velocity at ends)
+const smoother = t => t * t * t * (t * (t * 6 - 15) + 10);   // smootherstep (0 vel AND 0 accel at ends)
 function valueNoise(x, y, z) {
   const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
   const xf = smooth(x - xi), yf = smooth(y - yi), zf = smooth(z - zi);
@@ -1067,8 +1153,10 @@ window.__perf = () => ({ fps:+fpsAvg.toFixed(1), ms2D:+ms2D.toFixed(2), msGPUsub
 window.__benchGPU = (n) => (gpu ? gpu.benchGPU(n) : Promise.resolve(null));
 
 function resize() {
-  // 2D is DPR-capped for perf; the GPU path has the headroom to render at full DPR (crisper).
-  dpr = Math.min(window.devicePixelRatio || 1, gpu ? 2.5 : CONFIG.maxDPR);
+  // 2D is DPR-capped for perf; the GPU path renders sharper but the per-pixel
+  // bloom pass scales with pixel count, so cap at 2.0 (native on 2x displays,
+  // ~36% fewer pixels than 2.5) to keep it smooth on hi-DPI / 4K screens.
+  dpr = Math.min(window.devicePixelRatio || 1, gpu ? 2.0 : CONFIG.maxDPR);
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
@@ -1130,6 +1218,29 @@ let reservoirTarget = 0, reservoirT = 0;
 let reservoirLerp = 0.025;   // gentle morph for reservoir; About Me bumps this up
 let aboutPending = false;    // banner waits until the black hole is 50% faded
 
+// ---- The Fall / Tesseract Library state (declared before frame()) ----
+const CAM_HOME    = CONFIG.camDist;   // 17 — home camera distance
+const CAM_THROUGH = 2.5;              // through-the-horizon distance (not all the way to 1)
+const FOV_THROUGH = 0.92;             // widen FOV during the dive → exaggerated fisheye
+const FALL_DUR    = 1700;             // ms for the plunge
+let liveCamDist = CAM_HOME, liveFov = CONFIG.fov;   // frame() reads THESE, not CONFIG
+let fallRaw = 0;                      // linear 0 = home → 1 = through the horizon
+let fallDir = 0;                      // +1 entering, -1 climbing back out, 0 idle
+let inLibrary = false;
+
+// ---- Choreographed Back exit: the camera FALLS BACK OUT of the black hole —
+//      a reverse of the entry Fall. The tabs warp out; when they're 60% warped
+//      the hole has re-materialised around the frame and the camera zooms back
+//      OUT through the event horizon (camDist 2.5 → 17), cinematically settling
+//      where the name + buttons fade in. No geometry scaling — the camera
+//      distance does all the work (the horizon shrinks as you pull away). ----
+let exiting = false, exitStart = 0;
+const EXIT_DUR   = 2500;             // ms for the whole fall-out
+const REVEAL_D0  = 2.0;              // camDist where the black hole STARTS coming into place (code still up)
+const REVEAL_D1  = 20.0;             // camDist where it's fully in (~30% of screen) and the code has gone
+const WARP_MS    = 1000;             // element warp-away duration in ms
+let holeScale = 1;                   // black hole stays FULL size — camDist does the work, no scaling
+
 // ---- Decode view: fades the black hole out (so the field becomes plain streaming
 //      code) while the centre "parting" panel is open. Shares the rT fade pathway. ----
 let decodeTarget = 0, decodeT = 0;
@@ -1172,15 +1283,22 @@ function frame(now) {
   if (dtMs > 0) fpsAvg += (1000 / dtMs - fpsAvg) * 0.1;
   let nCap = 0, nDisk = 0, nBg = 0;
 
+  // Drive the camera: the choreographed Back exit, or the plunge / home tween.
+  if (exiting) advanceExit(now); else advanceFall(dtMs);
+
   // Hoist hot config values into locals (fewer property lookups per cell).
-  const Rhor = CONFIG.horizon, diskIn = CONFIG.diskInner, diskOut = CONFIG.diskOuter;
-  const diskSpan = diskOut - diskIn;
-  const camDist = CONFIG.camDist, fov = CONFIG.fov, levels = CONFIG.levels;
+  // The hole's scale (0..1 during the warp-out re-formation, 1 otherwise)
+  // multiplies the whole geometry: horizon, disk, photon sphere and the
+  // bending strength grow together, so the hole scales up from nothing.
+  const hs = holeScale, bendK = -1.5 * hs, photonR = 1.5 * hs;
+  const Rhor = CONFIG.horizon * hs, diskIn = CONFIG.diskInner * hs, diskOut = CONFIG.diskOuter * hs;
+  const diskSpan = (diskOut - diskIn) || 1;   // guard: no disk hits possible at hs = 0 anyway
+  const camDist = liveCamDist, fov = liveFov, levels = CONFIG.levels;
   const octaves = CONFIG.octaves, noiseScale = CONFIG.noiseScale, drift = CONFIG.drift;
   const beam = CONFIG.beam, ringGlow = CONFIG.ringGlow, spin = CONFIG.spin;
   const bgGlow = CONFIG.bgGlow, bgScroll = CONFIG.bgScroll;
   const maxSteps = CONFIG.steps, cw = cellW, chh = cellH;
-  reservoirT += (reservoirTarget - reservoirT) * reservoirLerp;
+  if (!exiting) reservoirT += (reservoirTarget - reservoirT) * reservoirLerp;   // exit drives reservoirT directly (re-form)
   decodeT    += (decodeTarget    - decodeT)    * (decodeTarget < decodeT ? DECODE_LERP_CLOSE : DECODE_LERP);
   if (aboutPending && reservoirT >= 0.5) {   // reveal banner once black hole is half gone
     aboutOverlay.classList.add("open");
@@ -1197,8 +1315,10 @@ function frame(now) {
   // pyN is -1 at the top of the screen -> elevation goes negative -> camera dips below the
   // disk plane and the BOTTOM of the hole opens up; +1 at the bottom reveals the TOP.
   const sense = CONFIG.mouseSense;
-  const elev = CONFIG.camElev + pyN * CONFIG.lookRange * sense;
-  const azim = pxN * CONFIG.parallax * sense;                // subtle horizontal sway
+  // Tidal-shear jitter: a tiny random basis wobble in the last ~200ms of the fall.
+  const jit = (fallDir > 0 && fallRaw > 0.82) ? (fallRaw - 0.82) * 0.12 : 0;
+  const elev = CONFIG.camElev + pyN * CONFIG.lookRange * sense + (jit ? (Math.random()*2-1)*jit : 0);
+  const azim = pxN * CONFIG.parallax * sense + (jit ? (Math.random()*2-1)*jit : 0);   // subtle horizontal sway
 
   // Camera basis: look at the origin from slightly above the disk plane.
   const ce = Math.cos(elev), se = Math.sin(elev), ca = Math.cos(azim), sa = Math.sin(azim);
@@ -1297,8 +1417,9 @@ function frame(now) {
         if (r < Rhor) { captured = true; break; }       // fell through the horizon
         if (r < rmin) rmin = r;                          // track closest approach (for the photon ring)
 
-        // Geodesic bending: a = -1.5 · h² · r / |r|⁵  — pull toward the centre.
-        const f = -1.5 * h2 / (r2 * r2 * r);
+        // Geodesic bending: a = -1.5 · hs · h² · r / |r|⁵ — pull toward the centre,
+        // scaled by the hole's current size (hs = 1 in normal operation).
+        const f = bendK * h2 / (r2 * r2 * r);
         const ax = posx * f, ay = posy * f, az = posz * f;
 
         // Step size: large far away, small near the hole (and near the thin disk plane).
@@ -1358,7 +1479,7 @@ function frame(now) {
         const el = Math.asin(uy < -1 ? -1 : uy > 1 ? 1 : uy); // [-pi/2, pi/2]
 
         const amb = fbm((azi + 3) * noiseScale, (el + 3) * noiseScale, t * drift, octaves);
-        const dr = rmin - 1.5;                                // photon sphere ~ 1.5 Rs
+        const dr = rmin - photonR;                            // photon sphere ~ 1.5 Rs (scaled with the hole)
         const rg = ringGlow * (1 - rT) * Math.exp(-dr * dr / 0.4);       // photon-ring halo
         // Always-rendered, dim field: every escaping ray paints faint streaming code.
         const b = ambLUT[(amb * 1023) | 0] * (bgGlow * (1 + rT * 1.5)) + rg;
@@ -1385,6 +1506,9 @@ function frame(now) {
 
   // Push telemetry to the DOM at most ~5x/sec (never per-frame) and only while open.
   if (statsOn && now - lastStatT > 200) { updateTelem(nCap, nDisk, nBg); lastStatT = now; }
+
+  // Rotate the tesseract world (hover drift + drag inertia) while in the library.
+  updateTesseract();
 
   // Draw warm grain overlay while in reservoir mode.
   if (rT > 0.01) drawGrain(rT);
@@ -1435,8 +1559,11 @@ function setAbout(open) {
   }
 }
 $("aboutBtn").addEventListener("click", () => setAbout(true));
-$("reservoirBtn").addEventListener("click", () => setReservoir(true));
-$("reservoirBack").addEventListener("click", () => setReservoir(false));
+$("reservoirBtn").addEventListener("click", startFall);   // plunge → tesseract library
+$("reservoirBack").addEventListener("click", () => {
+  if (inLibrary || document.body.classList.contains("falling")) exitLibrary();
+  else setReservoir(false);
+});
 
 // ---- Project viewer ----
 const PROJECTS = {
@@ -1526,18 +1653,237 @@ function closeProject() {
   projectViewer.classList.remove("open");          // tab scales back down first
   projectViewer.setAttribute("aria-hidden", "true");
   document.body.classList.remove("project-open");
+  if (inLibrary) { reservoirLerp = 0.05; reservoirTarget = 0; }   // ease the dim hole back behind the library
   setTimeout(() => { reassembleCards(); projIframe.src = ""; }, 180);  // then cards fly home
 }
 
 $("proj-viewer-close").addEventListener("click", closeProject);
 document.querySelectorAll(".proj-card").forEach(card => {
   card.addEventListener("click", () => {
+    if (dragMoved) return;                                // ignore the click that ends a drag-orbit
     if (card.classList.contains("placeholder")) return;   // not wired yet
     openProject(card.dataset.project);
   });
 });
 $("about-close").addEventListener("click", () => setAbout(false));
 aboutOverlay.addEventListener("click", e => { if (e.target === aboutOverlay) setAbout(false); });
+
+/* =====================================================================
+   THE FALL → TESSERACT LIBRARY  (Interstellar easter egg)
+
+   Two acts, dispatched from the "Project Reservoir" button:
+     1. The Fall — advanceFall() eases liveCamDist 17 → 2.5, letting the
+        EXISTING Schwarzschild ray-tracer do all the visual work (the
+        shadow grows, the photon ring flares) for the price of one number.
+     2. The Library — a CSS-3D scene layered over the dimmed canvas: the
+        real project row repeated at depth like Cooper's tesseract. Only
+        the front row is real/clickable; the rest are atmospheric echoes.
+   ===================================================================== */
+const fallFlash = $("fall-flash");
+const reservoirBackEl = $("reservoirBack");
+const reservoirSwirlEl = $("reservoir-swirl");
+const stageEl = document.querySelector(".stage");
+const controlsEl = document.querySelector(".controls");
+let tesseractBuilt = false, tessWorld = null, tessEl = null;
+
+// World rotation channels: hover drift (ambient) + drag-to-orbit (with inertia).
+let dragRX = 0, dragRY = 0, hoverRX = 0, hoverRY = 0, velRX = 0, velRY = 0;
+let dragging = false, dragMoved = false, lastDragX = 0, lastDragY = 0;
+let worldScale = 1;                  // 1 in the library; shrinks the tabs away during the warp-out
+const HOVER_AMP = 6, DRAG_SENS = 0.28, RX_MAX = 46, DAMP = 0.9;
+// Resting library orientation: tipped a touch from below (−X) and turned (−Y)
+// so every card's depth-stack fans out into view instead of hiding behind it.
+const LIB_RX = -13, LIB_RY = -19;
+
+// Build the 3D scene once, on first fall. The front (real) layer is the
+// existing #reservoir-projects node, re-homed into the world so openProject(),
+// scatter/reassemble and querySelectorAll(".proj-card") all keep working
+// untouched. Echo layers are procedural clones — add a 6th project later and
+// the recursion picks it up for free.
+function buildTesseract() {
+  if (tesseractBuilt) return;
+  const tess = document.createElement("div"); tess.id = "tesseract";
+  const world = document.createElement("div"); world.id = "tesseract-world";
+  tess.appendChild(world);
+
+  const front = reservoirProjects;          // the real, clickable project row
+  front.classList.add("tess-front");
+
+  const ECHO = 8, ZSTEP = -240, YSTEP = -16;   // 8 shelves rising up-and-back → an infinite tower
+  for (let i = 1; i <= ECHO; i++) {
+    const layer = document.createElement("div");
+    layer.className = "tess-layer echo";
+    layer.setAttribute("aria-hidden", "true");      // echoes never intercept AT/clicks
+    layer.style.setProperty("--z", (ZSTEP * i) + "px");
+    layer.style.setProperty("--y", (YSTEP * i) + "px");
+    layer.style.opacity = (0.5 * Math.pow(0.72, i - 1)).toFixed(3);   // exponential falloff
+    layer.style.filter = "saturate(" + Math.max(0.2, 0.72 - 0.08 * i).toFixed(2) + ") "
+                       + "brightness(" + Math.max(0.45, 0.85 - 0.06 * i).toFixed(2) + ") hue-rotate(-12deg)";
+    front.querySelectorAll(".proj-card").forEach(card => {
+      const c = card.cloneNode(true);
+      c.classList.remove("proj-card");              // NOT a .proj-card → never caught by
+      c.classList.add("proj-echo");                 // querySelectorAll(".proj-card")
+      c.removeAttribute("data-project");
+      layer.appendChild(c);
+    });
+    world.appendChild(layer);                        // echoes behind…
+  }
+  world.appendChild(front);                          // …real row last (z = 0, on top)
+  document.body.appendChild(tess);
+  tessWorld = world; tessEl = tess;
+  attachTesseractControls(tess);
+  tesseractBuilt = true;
+}
+
+function attachTesseractControls(tess) {
+  tess.addEventListener("pointerdown", e => {
+    if (!inLibrary || document.body.classList.contains("project-open")) return;
+    dragging = true; dragMoved = false;              // a fresh gesture: assume it's a click…
+    lastDragX = e.clientX; lastDragY = e.clientY;
+    velRX = velRY = 0;
+  });
+  // Move/up on window so the orbit keeps tracking outside the cards' bounds.
+  window.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    const dx = e.clientX - lastDragX, dy = e.clientY - lastDragY;
+    if (Math.abs(dx) + Math.abs(dy) > 2) dragMoved = true;   // …until it moves → it's a drag
+    lastDragX = e.clientX; lastDragY = e.clientY;
+    dragRY += dx * DRAG_SENS; dragRX += -dy * DRAG_SENS;
+    velRY = dx * DRAG_SENS;   velRX = -dy * DRAG_SENS;       // carry velocity into inertia
+  });
+  window.addEventListener("pointerup", () => { dragging = false; });
+}
+
+// Per-frame world transform while in the library (called from frame()).
+function updateTesseract() {
+  if (!inLibrary || !tessWorld) return;
+  if (document.body.classList.contains("project-open")) return;   // freeze behind the viewer
+  hoverRY += (mxN * HOVER_AMP - hoverRY) * 0.04;                   // ambient breeze (reuses pointer)
+  hoverRX += (-myN * HOVER_AMP - hoverRX) * 0.04;
+  if (!dragging) {                                                 // inertia: exponential damping
+    dragRX += velRX; dragRY += velRY;
+    velRX *= DAMP; velRY *= DAMP;
+    if (Math.abs(velRX) < 1e-3) velRX = 0;
+    if (Math.abs(velRY) < 1e-3) velRY = 0;
+  }
+  if (dragRX > RX_MAX) dragRX = RX_MAX; else if (dragRX < -RX_MAX) dragRX = -RX_MAX;   // clamp pitch
+  const rx = dragRX + hoverRX, ry = dragRY + hoverRY;
+  // worldScale shrinks the tabs away during the warp-out exit (1 in the library).
+  tessWorld.style.transform = "rotateX(" + rx.toFixed(2) + "deg) rotateY(" + ry.toFixed(2) + "deg) scale(" + worldScale.toFixed(3) + ")";
+}
+
+// Advance the plunge tween — accelerating ease-in, reversible.
+function advanceFall(dtMs) {
+  if (fallDir !== 0) {
+    fallRaw += fallDir * (Math.min(dtMs, 60) / FALL_DUR);   // clamp dt so tab-switches don't jump
+    if (fallRaw >= 1) { fallRaw = 1; fallDir = 0; onFallComplete(); }
+    else if (fallRaw <= 0) { fallRaw = 0; fallDir = 0; onFallReversed(); }
+  }
+  const fe = fallRaw * fallRaw;                              // quadratic-in: real infall speeds up
+  liveCamDist = CAM_HOME + (CAM_THROUGH - CAM_HOME) * fe;
+  liveFov     = CONFIG.fov + (FOV_THROUGH - CONFIG.fov) * fe;
+}
+
+function triggerFlash() {
+  fallFlash.classList.remove("flash-anim");
+  void fallFlash.offsetWidth;                               // reflow → restart the keyframes
+  fallFlash.classList.add("flash-anim");
+}
+
+function startFall() {
+  if (inLibrary || document.body.classList.contains("falling")) return;
+  buildTesseract();
+  dragRX = LIB_RX; dragRY = LIB_RY; hoverRX = hoverRY = velRX = velRY = 0;   // rest at the angled view
+  worldScale = 1;                                                            // full-size on entry
+  if (tessWorld) tessWorld.style.transform = "rotateX(" + LIB_RX + "deg) rotateY(" + LIB_RY + "deg)";
+  document.body.classList.add("falling");
+  fallRaw = 0; fallDir = 1;
+}
+
+function onFallComplete() {           // crossed the horizon
+  triggerFlash();                     // white flash masks the swap into the library
+  document.body.classList.remove("falling");
+  document.body.classList.add("library");
+  inLibrary = true;
+  // Dissolve the hole into the streaming reservoir code field (the flash hides
+  // the snap); the exit later re-forms it. This sits BEHIND the swirl backdrop.
+  reservoirT = reservoirTarget = 1;
+  window.reservoirSwirl?.start();     // spin up the swirl flow-field library backdrop
+}
+
+function onFallReversed() {           // climbed back out → home
+  document.body.classList.remove("falling");
+}
+
+/* Choreographed Back exit — the camera falls back OUT of the black hole.
+   Press back and everything moves at once, all monotonic (no bounce): the camera
+   pans out immediately (camDist 2.5 → 17 smootherstep; FOV eases straight
+   0.92 → 0.60), the tabs warp away, and the streaming code resolves into the
+   black hole so it's visible AS the camera pans and then recedes to home size.
+   Elements warp away over WARP_MS (≥500ms), gone before the hole fully blacks;
+   the name + buttons fade
+   in as the camera settles. No geometry scaling — camDist does the work. */
+function advanceExit(now) {
+  let p = (now - exitStart) / EXIT_DUR;
+  if (p > 1) p = 1;
+
+  // Camera pans out immediately — smooth, monotonic, no hold and no FOV bounce.
+  const camPhase = smoother(p);
+  liveCamDist = CAM_THROUGH + (CAM_HOME - CAM_THROUGH) * camPhase;   // 2.5 → 17
+  liveFov     = FOV_THROUGH + (CONFIG.fov - FOV_THROUGH) * camPhase; // 0.92 → 0.60, monotonic
+
+  // The ASCII code stays fully up until the camera has panned far enough that
+  // the hole's shadow no longer fills the frame — THEN the black hole resolves
+  // in. Reveal is tied to camDist: over [REVEAL_D0, REVEAL_D1] the code gives
+  // way to the lensed hole, gone once the horizon is ~30% of the screen. Camera
+  // pans monotonically, so this is monotonic too.
+  const reveal = smooth(Math.max(0, Math.min((liveCamDist - REVEAL_D0) / (REVEAL_D1 - REVEAL_D0), 1)));
+  reservoirT = 1 - reveal;
+  holeScale  = 1;                                        // full size — camDist does the work
+
+  // The swirl flow-field dissolves in lockstep with the streaming code resolving
+  // back into the hole (same `reveal` curve as reservoirT), so it cross-blends
+  // with the original background reforming instead of popping out on its own.
+  reservoirSwirlEl.style.opacity = (1 - reveal).toFixed(3);
+
+  // Tabs + back button warp away over WARP_MS.
+  const warpAway = smooth(Math.min(p / (WARP_MS / EXIT_DUR), 1));
+  worldScale = 1 - 0.92 * warpAway;                      // shrink into the hole
+  const tabsOp = 1 - warpAway;                           // …and fade with it
+  tessEl.style.opacity          = tabsOp.toFixed(3);
+  reservoirBackEl.style.opacity = tabsOp.toFixed(3);
+
+  // 3) Name + buttons fade in as the camera settles into its final spot.
+  const stageOp = smooth(Math.max(0, (p - 0.80) / 0.20));
+  stageEl.style.opacity    = stageOp.toFixed(3);
+  controlsEl.style.opacity = stageOp.toFixed(3);
+  if (p >= 1) finishExit();
+}
+
+function finishExit() {
+  exiting = false; inLibrary = false;
+  document.body.classList.remove("library", "exiting");
+  tessEl.style.opacity = "";             // hand every inline opacity back to CSS
+  reservoirBackEl.style.opacity = "";
+  reservoirSwirlEl.style.opacity = "";
+  stageEl.style.opacity = ""; controlsEl.style.opacity = "";
+  worldScale = 1;                        // reset so the next visit starts full-size
+  holeScale = 1;                         // hole at full size for normal operation
+  liveCamDist = CAM_HOME; liveFov = CONFIG.fov;
+  reservoirT = reservoirTarget = 0;      // hole fully formed, home state
+  fallRaw = 0; fallDir = 0;
+  window.reservoirSwirl?.stop();         // stop the swirl backdrop loop (already faded out)
+}
+
+function exitLibrary() {
+  if (inLibrary && !exiting) {
+    exiting = true;
+    exitStart = performance.now();
+    document.body.classList.add("exiting");
+  } else if (document.body.classList.contains("falling")) {
+    fallDir = -1;                     // interrupt an in-progress plunge and climb back out
+  }
+}
 
 const sidebar = $("sidebar"), physBtn = $("physBtn"), thorneBtn = $("thorneBtn");
 function setSidebar(open) {
@@ -1645,6 +1991,7 @@ document.addEventListener("keydown", e => {
   if (singularityOverlay.classList.contains("open")) { setSingularity(false); return; }
   if (aboutOverlay.classList.contains("open")) { setAbout(false); return; }
   if (projectViewer.classList.contains("open")) { closeProject(); return; }
+  if (inLibrary || document.body.classList.contains("falling")) { exitLibrary(); return; }
   if (document.body.classList.contains("reservoir")) { setReservoir(false); return; }
   if (document.body.classList.contains("thorne")) setThorne(false);
   if (sidebar.classList.contains("open")) setSidebar(false);
@@ -1657,6 +2004,234 @@ document.addEventListener("click", e => {
   if (document.body.classList.contains("thorne") &&
       !e.target.closest(".controls") && !e.target.closest(".sidebar") && !e.target.closest("#singularity-overlay")) setThorne(false);
 });
+</script>
+
+<!-- ============================================================================
+     RESERVOIR SWIRL BACKDROP — self-contained ASCII swirl flow-field renderer.
+     Isolated in its own IIFE (own CONFIG/frame/atlas) so nothing collides with
+     the black-hole renderer above. Renders to #reservoir-swirl only while the
+     library is open (window.reservoirSwirl.start()/stop()).
+     ============================================================================ -->
+<script>
+(function () {
+"use strict";
+
+const CONFIG = {
+  fontSize:    16, lineHeight: 1.25, maxDPR: 1.5, speed: 0.25,
+  swirl: 1.6, swirlPower: 0.5,
+  noiseScale: 2.4, noiseTime: 0.22, octaves: 3, contrast: 1.7,
+  ambientLow: 0.10, ambientHigh: 0.60,
+  heatRadius: 150, heatGain: 1.0,
+  lensRadius: 175, lensMag: 0.55, cursorEase: 0.12,
+  pan: 0.08,                     // eased spatial parallax: the field drifts with the pointer
+  caStrength: 5, caRadius: 100, caSmoke: 1.7, caSmokeFreq: 0.012,
+  caDrift: 0.5, caEdge: 0.9, caAlpha: 0.55,
+  levels: 26,
+  palette: [
+    [27,18,34],[40,11,84],[101,21,110],[159,42,99],
+    [212,72,66],[245,125,21],[250,193,39],[252,255,164],
+  ],
+};
+
+const SOURCE = `
+KR01_Genesis_Navier_Stokes_Incompressible_Continuity = "div(u) = 0"
+VS67_Sauron_Navier_Stokes_Incompressible_Momentum = "rho * (du/dt + u * grad(u)) = -grad(p) + mu * del^2(u) + f"
+IO99_Gatekeeper_Navier_Stokes_Compressible_Continuity = "d(rho)/dt + div(rho * u) = 0"
+GX10_Iris_Navier_Stokes_Viscous_Stress_Tensor = "tau = 2 * mu * E + lambda * div(u) * I"
+SC55_Cerberus_Navier_Stokes_Vorticity_Transport = "d(omega)/dt + (u * grad)*omega = (omega * grad)*u + nu * del^2(omega)"
+TR66_Hunter_Navier_Stokes_Reynolds_Averaged_Momentum = "rho * u_j * d(u_i)/dx_j = rho * f_i + d/dx_j * [-p * delta_ij + mu * (d(u_i)/dx_j + d(u_j)/dx_i) - rho * u_i_prime * u_j_prime]"
+OB33_Monolith_General_Relativity_Einstein_Field_Equations = "G_mu_nu + Lambda * g_mu_nu = 8 * pi * G / c^4 * T_mu_nu"
+CPX4_Cortex_General_Relativity_Geodesic_Equation = "d^2(x_mu)/d(lambda)^2 + Gamma_mu_alpha_beta * d(x_alpha)/d(lambda) * d(x_beta)/d(lambda) = 0"
+DP44_Prism_General_Relativity_Riemann_Curvature_Tensor = "R_rho_sigma_mu_nu = d_mu(Gamma_rho_nu_sigma) - d_nu(Gamma_rho_mu_sigma) + Gamma_rho_mu_lambda * Gamma_lambda_nu_sigma - Gamma_rho_nu_lambda * Gamma_lambda_mu_sigma"
+CR99_Enigma_General_Relativity_Schwarzschild_Metric = "ds^2 = -(1 - 2*G*M / (c^2 * r)) * c^2 * dt^2 + (1 - 2*G*M / (c^2 * r))^-1 * dr^2 + r^2 * d(Omega)^2"
+RC01_Spectre_General_Relativity_Killing_Equation = "grad_mu(xi_nu) + grad_nu(xi_mu) = 0"
+AI00_Oracle_General_Relativity_Ricci_Tensor = "R_mu_nu = R_lambda_mu_lambda_nu"
+VM82_Mnemosyne_Isentropic_Flow_Stagnation_Pressure_Ratio = "P0 / P = (1 + (gamma - 1) / 2 * M^2)^(gamma / (gamma - 1))"
+VS88_Argus_Isentropic_Flow_Stagnation_Temperature_Ratio = "T0 / T = 1 + (gamma - 1) / 2 * M^2"
+NK23_Hermes_Isentropic_Flow_Stagnation_Density_Ratio = "rho0 / rho = (1 + (gamma - 1) / 2 * M^2)^(1 / (gamma - 1))"
+WB09_Valkyrie_Isentropic_Flow_Area_Mach_Relation = "A / A_star = (1 / M) * ((2 / (gamma + 1)) * (1 + (gamma - 1) / 2 * M^2))^((gamma + 1) / (2 * (gamma - 1)))"
+EV77_Horizon_Isentropic_Flow_Speed_of_Sound = "a = sqrt(gamma * R * T)"
+BT00_Zero_Isentropic_Flow_Characteristic_Mach_Number = "M_star = M * sqrt((gamma + 1) / (2 + (gamma - 1) * M^2))"
+TX09_Chroma_Thermodynamics_First_Law = "dU = dQ - dW"
+ID07_Ghost_Thermodynamics_Fundamental_Relation = "dU = T * dS - P * dV"
+SNX1_Viper_Thermodynamics_Gibbs_Free_Energy = "G = H - T * S"
+BM19_Leviathan_Thermodynamics_Clausius_Clapeyron = "dP / dT = L / (T * delta_V)"
+PS12_Dynamo_Thermodynamics_Ideal_Gas_Law = "P * V = n * R * T"
+HZ60_Refresh_Thermodynamics_Maxwell_Relation = "dT / dV_S = -dP / dS_V"
+PL13_Locksmith_Discretization_Central_Difference_First_Derivative = "d(phi)/dx = (phi_i_plus_1 - phi_i_minus_1) / (2 * delta_x)"
+DF05_Phalanx_Discretization_Central_Difference_Second_Derivative = "d^2(phi)/dx^2 = (phi_i_plus_1 - 2 * phi_i + phi_i_minus_1) / delta_x^2"
+XF51_Roswell_Discretization_Forward_Euler = "u_n_plus_1 = u_n + delta_t * f(t_n, u_n)"
+LU01_Lumens_Discretization_Crank_Nicolson = "(u_n_plus_1 - u_n) / delta_t = 0.5 * (F(u_n_plus_1) + F(u_n))"
+SH42_Aegis_Discretization_First_Order_Upwind = "v * d(phi)/dx = v * (phi_i - phi_i_minus_1) / delta_x"
+SY99_Overlord_Discretization_Runge_Kutta_Fourth_Order = "u_n_plus_1 = u_n + (delta_t / 6) * (k1 + 2*k2 + 2*k3 + k4)"
+`;
+const LINES = SOURCE.trim().split("\n").map(s => s.trim() + "  ");
+
+function vhash(ix, iy, iz) {
+  let n = (ix | 0) * 374761393 + (iy | 0) * 668265263 + (iz | 0) * 1274126177;
+  n = (n ^ (n >>> 13)) >>> 0; n = (n * 1274126177) >>> 0;
+  return (n & 0xffffff) / 0x1000000;
+}
+const smooth = t => t * t * (3 - 2 * t);
+function valueNoise(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
+  const xf = smooth(x - xi), yf = smooth(y - yi), zf = smooth(z - zi);
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const c000 = vhash(xi,yi,zi), c100 = vhash(xi+1,yi,zi);
+  const c010 = vhash(xi,yi+1,zi), c110 = vhash(xi+1,yi+1,zi);
+  const c001 = vhash(xi,yi,zi+1), c101 = vhash(xi+1,yi,zi+1);
+  const c011 = vhash(xi,yi+1,zi+1), c111 = vhash(xi+1,yi+1,zi+1);
+  return lerp(lerp(lerp(c000,c100,xf),lerp(c010,c110,xf),yf),
+              lerp(lerp(c001,c101,xf),lerp(c011,c111,xf),yf), zf);
+}
+function fbm(x, y, z, octaves) {
+  let sum = 0, amp = 0.5, freq = 1, norm = 0;
+  for (let o = 0; o < octaves; o++) { sum += amp * valueNoise(x*freq, y*freq, z*freq); norm += amp; amp *= 0.5; freq *= 2; }
+  return sum / norm;
+}
+
+const canvas = document.getElementById("reservoir-swirl");
+const ctx = canvas.getContext("2d", { alpha: false });
+let W = 0, H = 0, dpr = 1, cellW = 0, cellH = 0, cols = 0, rows = 0;
+
+const LUT = new Array(CONFIG.levels + 1);
+(function buildLUT() {
+  const stops = CONFIG.palette, segs = stops.length - 1;
+  for (let i = 0; i <= CONFIG.levels; i++) {
+    const t = i / CONFIG.levels, s = Math.min(segs - 1, Math.floor(t * segs)), lt = t * segs - s;
+    const a = stops[s], b = stops[s + 1];
+    LUT[i] = `rgb(${Math.round(a[0]+(b[0]-a[0])*lt)},${Math.round(a[1]+(b[1]-a[1])*lt)},${Math.round(a[2]+(b[2]-a[2])*lt)})`;
+  }
+})();
+const ambLUT = new Float32Array(1024);
+for (let i = 0; i < 1024; i++) ambLUT[i] = CONFIG.ambientLow + (CONFIG.ambientHigh - CONFIG.ambientLow) * Math.pow(i / 1023, CONFIG.contrast);
+
+const LINE_CODES = LINES.map(l => { const a = new Uint16Array(l.length); for (let i = 0; i < l.length; i++) a[i] = l.charCodeAt(i); return a; });
+function getCodeAt(tx, ty) { const n = LINE_CODES.length; const arr = LINE_CODES[((ty % n) + n) % n]; const m = arr.length; return arr[((tx % m) + m) % m]; }
+
+const charCol = new Int16Array(128).fill(-1); const atlasChars = [];
+for (const arr of LINE_CODES) for (const code of arr) { if (code !== 32 && code < 128 && charCol[code] === -1) { charCol[code] = atlasChars.length; atlasChars.push(code); } }
+let atlasBase, atlasRed, atlasCyan, tileWd, tileHd;
+function makeTintRow(color, fontDev) {
+  const cv = document.createElement("canvas"); cv.width = atlasChars.length * tileWd; cv.height = tileHd;
+  const a = cv.getContext("2d"); a.textBaseline = "top"; a.font = fontDev; a.fillStyle = color;
+  for (let i = 0; i < atlasChars.length; i++) a.fillText(String.fromCharCode(atlasChars[i]), i * tileWd, 0);
+  return cv;
+}
+function buildAtlas() {
+  tileWd = Math.max(1, Math.ceil(cellW * dpr)); tileHd = Math.max(1, Math.ceil(cellH * dpr));
+  const fontDev = `${CONFIG.fontSize * dpr}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
+  atlasBase = document.createElement("canvas");
+  atlasBase.width = atlasChars.length * tileWd; atlasBase.height = (CONFIG.levels + 1) * tileHd;
+  const a = atlasBase.getContext("2d"); a.textBaseline = "top"; a.font = fontDev;
+  for (let lvl = 0; lvl <= CONFIG.levels; lvl++) { a.fillStyle = LUT[lvl]; for (let i = 0; i < atlasChars.length; i++) a.fillText(String.fromCharCode(atlasChars[i]), i * tileWd, lvl * tileHd); }
+  atlasRed = makeTintRow("rgb(255,42,90)", fontDev); atlasCyan = makeTintRow("rgb(42,200,255)", fontDev);
+}
+
+let gDist, gAng, gDistPow;
+function buildGeometry() {
+  const asp = W / H, N = cols * rows;
+  gDist = new Float32Array(N); gAng = new Float32Array(N); gDistPow = new Float32Array(N);
+  let i = 0;
+  for (let gy = 0; gy < rows; gy++) for (let gx = 0; gx < cols; gx++, i++) {
+    const nx = (gx / cols - 0.5) * asp, ny = (gy / rows - 0.5), d = Math.sqrt(nx * nx + ny * ny);
+    gDist[i] = d; gAng[i] = Math.atan2(ny, nx); gDistPow[i] = Math.pow(d, CONFIG.swirlPower);
+  }
+}
+const caCode = [], caX = [], caY = [];
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = `${CONFIG.fontSize}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
+  ctx.textBaseline = "top";
+  cellW = ctx.measureText("M").width || CONFIG.fontSize * 0.6;
+  cellH = CONFIG.fontSize * CONFIG.lineHeight;
+  cols = Math.ceil(W / cellW) + 1; rows = Math.ceil(H / cellH) + 1;
+  buildGeometry(); buildAtlas();
+}
+window.addEventListener("resize", () => { if (active) resize(); });
+resize();
+
+let mxPx = W / 2, myPx = H / 2, lcx = W / 2, lcy = H / 2;
+window.addEventListener("pointermove", e => { mxPx = e.clientX; myPx = e.clientY; });
+
+let active = false, pending = false;
+function frame(now) {
+  pending = false;
+  const t = now * 0.001 * CONFIG.speed, tCA = now * 0.001, asp = W / H;
+  const inv2sig2 = 1 / (2 * CONFIG.heatRadius * CONFIG.heatRadius);
+  const caInv2 = 1 / (2 * CONFIG.caRadius * CONFIG.caRadius);
+  const caCullSq = (CONFIG.caRadius * 2.6) ** 2;
+  const lensR = CONFIG.lensRadius, lensR2 = lensR * lensR;
+  const swirl = CONFIG.swirl, swirlPow = CONFIG.swirlPower, lensMag = CONFIG.lensMag;
+  const noiseScale = CONFIG.noiseScale, noiseTime = CONFIG.noiseTime, octaves = CONFIG.octaves;
+  const heatGain = CONFIG.heatGain, levels = CONFIG.levels, cw = cellW, chh = cellH;
+
+  lcx += (mxPx - lcx) * CONFIG.cursorEase; lcy += (myPx - lcy) * CONFIG.cursorEase;
+
+  // Eased spatial parallax: the whole field drifts opposite the (already-eased)
+  // pointer, giving the backdrop depth/motion like the main black-hole view.
+  const pan = CONFIG.pan;
+  const panU = (lcx / W - 0.5) * 2 * pan, panV = (lcy / H - 0.5) * 2 * pan;
+  const panCols = panU * cols, panRows = panV * rows;
+  const panNX = panU * noiseScale, panNY = panV * noiseScale;
+
+  ctx.fillStyle = "#1b1222"; ctx.fillRect(0, 0, W, H);
+  caCode.length = 0; caX.length = 0; caY.length = 0;
+
+  let i = 0;
+  for (let gy = 0; gy < rows; gy++) {
+    for (let gx = 0; gx < cols; gx++, i++) {
+      const px = gx * cw, py = gy * chh, ldx = px - lcx, ldy = py - lcy, ld2 = ldx * ldx + ldy * ldy;
+      let dist, ang0, distPow;
+      if (ld2 < lensR2) {
+        const r = Math.sqrt(ld2) / lensR, scale = 1 - lensMag * (1 - smooth(r));
+        const u = (lcx + ldx * scale) / cw / cols, v = (lcy + ldy * scale) / chh / rows;
+        const nx = (u - 0.5) * asp, ny = (v - 0.5);
+        dist = Math.sqrt(nx * nx + ny * ny); ang0 = Math.atan2(ny, nx); distPow = Math.pow(dist, swirlPow);
+      } else { dist = gDist[i]; ang0 = gAng[i]; distPow = gDistPow[i]; }
+
+      const ang = ang0 + swirl * distPow * t, su = Math.cos(ang) * dist, sv = Math.sin(ang) * dist;
+      const tx = Math.floor((su / asp + 0.5) * cols + panCols), ty = Math.floor((sv + 0.5) * rows + panRows);
+      const code = getCodeAt(tx, ty);
+      if (code === 32) continue;
+
+      const af = fbm(su * noiseScale + 100 + panNX, sv * noiseScale + 100 + panNY, t * noiseTime, octaves);
+      const amb = ambLUT[(af * 1023) | 0];
+      const heat = heatGain * Math.exp(-ld2 * inv2sig2);
+      const b = 1 - (1 - amb) * (1 - heat);
+      let lvl = (b * levels) | 0; if (lvl < 0) lvl = 0; else if (lvl > levels) lvl = levels;
+      ctx.drawImage(atlasBase, charCol[code] * tileWd, lvl * tileHd, tileWd, tileHd, px, py, cw, chh);
+      if (ld2 < caCullSq) { caCode.push(code); caX.push(px); caY.push(py); }
+    }
+  }
+
+  ctx.globalCompositeOperation = "lighter";
+  const caStrength = CONFIG.caStrength, caSmoke = CONFIG.caSmoke, caSmokeFreq = CONFIG.caSmokeFreq,
+        caDrift = CONFIG.caDrift, caEdge = CONFIG.caEdge, caAlpha = CONFIG.caAlpha, caRadius = CONFIG.caRadius;
+  for (let k = 0; k < caCode.length; k++) {
+    const px = caX[k], py = caY[k], dx = px - lcx, dy = py - lcy, d2 = dx * dx + dy * dy, d = Math.sqrt(d2) || 0.0001;
+    const fall = Math.exp(-d2 * caInv2), r = d / caRadius, edge = (r < 1) ? caEdge * 4 * r * (1 - r) : 0, mag = fall + edge;
+    const n = fbm(px * caSmokeFreq, py * caSmokeFreq, tCA * caDrift, 2), rot = (n - 0.5) * Math.PI * caSmoke;
+    const cr = Math.cos(rot), sr = Math.sin(rot), ux = dx / d, uy = dy / d;
+    const wx = ux * cr - uy * sr, wy = ux * sr + uy * cr, off = caStrength * mag * (0.4 + n), sx = charCol[caCode[k]] * tileWd;
+    ctx.globalAlpha = caAlpha * Math.min(1, mag);
+    ctx.drawImage(atlasRed,  sx, 0, tileWd, tileHd, px + wx * off, py + wy * off, cw, chh);
+    ctx.drawImage(atlasCyan, sx, 0, tileWd, tileHd, px - wx * off, py - wy * off, cw, chh);
+  }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+
+  if (active && !document.hidden) { pending = true; requestAnimationFrame(frame); }
+}
+
+function start() { if (active) return; active = true; pending = true; resize(); requestAnimationFrame(frame); }
+function stop() { active = false; }
+document.addEventListener("visibilitychange", () => { if (active && !document.hidden && !pending) { pending = true; requestAnimationFrame(frame); } });
+window.reservoirSwirl = { start, stop, resize };
+})();
 </script>
 </body>
 </html>
