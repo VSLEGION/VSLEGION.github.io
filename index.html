@@ -1149,10 +1149,11 @@ for (const arr of LINE_CODES) for (const code of arr) {
 const FALLBACK_COL = charCol[61] >= 0 ? charCol[61] : 0;   // '=' if present, else first
 
 let atlasBase, tileWd, tileHd;
+let fontPx = CONFIG.fontSize;   // CSS-px glyph size, normalized for browser zoom in resize()
 function buildAtlas() {
   tileWd = Math.max(1, Math.ceil(cellW * dpr));
   tileHd = Math.max(1, Math.ceil(cellH * dpr));
-  const fontDev = `${CONFIG.fontSize * dpr}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
+  const fontDev = `${fontPx * dpr}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
   atlasBase = document.createElement("canvas");
   atlasBase.width = atlasChars.length * tileWd;
   atlasBase.height = (CONFIG.levels + 1) * tileHd;
@@ -1180,19 +1181,41 @@ window.__perf = () => ({ fps:+fpsAvg.toFixed(1), ms2D:+ms2D.toFixed(2), msGPUsub
                          forceCPU, gpu: !!gpu, cols, rows, dpr, cells: cols*rows });
 window.__benchGPU = (n) => (gpu ? gpu.benchGPU(n) : Promise.resolve(null));
 
+// ---- Browser-zoom normalization --------------------------------------------
+// Ctrl +/- zoom rescales CSS pixels, which used to rescale the glyph grid with
+// it. outerWidth is reported in OS-level pixels (zoom-invariant) while
+// innerWidth shrinks as zoom grows, so their ratio estimates the zoom level;
+// snapping to the browsers' real zoom stops filters out scrollbar/chrome noise.
+// Glyph size is divided by the zoom (same PHYSICAL scale + density at any
+// zoom) and the DPR cap is multiplied by it (same full device resolution and
+// the same per-frame cost at any zoom).
+const ZOOM_STOPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
+function browserZoom() {
+  try { if (window.self !== window.top) return 1; } catch (e) { return 1; }   // embedded frame: ratio is meaningless
+  const raw = (window.outerWidth || 0) / Math.max(1, window.innerWidth);
+  if (!isFinite(raw) || raw <= 0) return 1;
+  let z = 1, best = Infinity;
+  for (const s of ZOOM_STOPS) { const d = Math.abs(raw - s); if (d < best) { best = d; z = s; } }
+  return Math.min(3, Math.max(0.5, z));   // beyond 300%, let accessibility zoom win
+}
+window.__browserZoom = browserZoom;       // shared with the swirl-backdrop renderer
+
 function resize() {
+  const zoom = browserZoom();
+  fontPx = CONFIG.fontSize / zoom;        // CSS px shrink as zoom grows -> physical glyph size constant
   // 2D is DPR-capped for perf; the GPU path renders sharper but the per-pixel
   // bloom pass scales with pixel count, so cap at 2.0 (native on 2x displays,
   // ~36% fewer pixels than 2.5) to keep it smooth on hi-DPI / 4K screens.
-  dpr = Math.min(window.devicePixelRatio || 1, gpu ? 2.0 : CONFIG.maxDPR);
+  // The cap scales with zoom so device-pixel resolution stays constant.
+  dpr = Math.min(window.devicePixelRatio || 1, (gpu ? 2.0 : CONFIG.maxDPR) * zoom);
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.font = `${CONFIG.fontSize}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
+  ctx.font = `${fontPx}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
   ctx.textBaseline = "top";
-  cellW = ctx.measureText("M").width || CONFIG.fontSize * 0.6;
-  cellH = CONFIG.fontSize * CONFIG.lineHeight;
+  cellW = ctx.measureText("M").width || fontPx * 0.6;
+  cellH = fontPx * CONFIG.lineHeight;
   cols = Math.ceil(W / cellW) + 1;
   rows = Math.ceil(H / cellH) + 1;
   buildAtlas();
@@ -2125,6 +2148,7 @@ function fbm(x, y, z, octaves) {
 const canvas = document.getElementById("reservoir-swirl");
 const ctx = canvas.getContext("2d", { alpha: false });
 let W = 0, H = 0, dpr = 1, cellW = 0, cellH = 0, cols = 0, rows = 0;
+let fontPx = CONFIG.fontSize, zoomInv = 1;   // browser-zoom normalized in resize()
 
 const LUT = new Array(CONFIG.levels + 1);
 (function buildLUT() {
@@ -2152,7 +2176,7 @@ function makeTintRow(color, fontDev) {
 }
 function buildAtlas() {
   tileWd = Math.max(1, Math.ceil(cellW * dpr)); tileHd = Math.max(1, Math.ceil(cellH * dpr));
-  const fontDev = `${CONFIG.fontSize * dpr}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
+  const fontDev = `${fontPx * dpr}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
   atlasBase = document.createElement("canvas");
   atlasBase.width = atlasChars.length * tileWd; atlasBase.height = (CONFIG.levels + 1) * tileHd;
   const a = atlasBase.getContext("2d"); a.textBaseline = "top"; a.font = fontDev;
@@ -2173,14 +2197,19 @@ function buildGeometry() {
 const caCode = [], caX = [], caY = [];
 
 function resize() {
-  dpr = Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR);
+  // Same browser-zoom normalization as the main renderer: physical glyph
+  // scale/density and device-pixel resolution stay constant at any zoom.
+  const zoom = window.__browserZoom ? window.__browserZoom() : 1;
+  zoomInv = 1 / zoom;
+  fontPx = CONFIG.fontSize * zoomInv;
+  dpr = Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR * zoom);
   W = window.innerWidth; H = window.innerHeight;
   canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.font = `${CONFIG.fontSize}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
+  ctx.font = `${fontPx}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
   ctx.textBaseline = "top";
-  cellW = ctx.measureText("M").width || CONFIG.fontSize * 0.6;
-  cellH = CONFIG.fontSize * CONFIG.lineHeight;
+  cellW = ctx.measureText("M").width || fontPx * 0.6;
+  cellH = fontPx * CONFIG.lineHeight;
   cols = Math.ceil(W / cellW) + 1; rows = Math.ceil(H / cellH) + 1;
   buildGeometry(); buildAtlas();
 }
@@ -2194,10 +2223,13 @@ let active = false, pending = false;
 function frame(now) {
   pending = false;
   const t = now * 0.001 * CONFIG.speed, tCA = now * 0.001, asp = W / H;
-  const inv2sig2 = 1 / (2 * CONFIG.heatRadius * CONFIG.heatRadius);
-  const caInv2 = 1 / (2 * CONFIG.caRadius * CONFIG.caRadius);
-  const caCullSq = (CONFIG.caRadius * 2.6) ** 2;
-  const lensR = CONFIG.lensRadius, lensR2 = lensR * lensR;
+  // Cursor-space radii are in CSS px, so they scale with zoomInv to stay
+  // physically matched to the zoom-normalized glyphs.
+  const heatR = CONFIG.heatRadius * zoomInv, caR = CONFIG.caRadius * zoomInv;
+  const inv2sig2 = 1 / (2 * heatR * heatR);
+  const caInv2 = 1 / (2 * caR * caR);
+  const caCullSq = (caR * 2.6) ** 2;
+  const lensR = CONFIG.lensRadius * zoomInv, lensR2 = lensR * lensR;
   const swirl = CONFIG.swirl, swirlPow = CONFIG.swirlPower, lensMag = CONFIG.lensMag;
   const noiseScale = CONFIG.noiseScale, noiseTime = CONFIG.noiseTime, octaves = CONFIG.octaves;
   const heatGain = CONFIG.heatGain, levels = CONFIG.levels, cw = cellW, chh = cellH;
@@ -2242,8 +2274,8 @@ function frame(now) {
   }
 
   ctx.globalCompositeOperation = "lighter";
-  const caStrength = CONFIG.caStrength, caSmoke = CONFIG.caSmoke, caSmokeFreq = CONFIG.caSmokeFreq,
-        caDrift = CONFIG.caDrift, caEdge = CONFIG.caEdge, caAlpha = CONFIG.caAlpha, caRadius = CONFIG.caRadius;
+  const caStrength = CONFIG.caStrength * zoomInv, caSmoke = CONFIG.caSmoke, caSmokeFreq = CONFIG.caSmokeFreq / zoomInv,
+        caDrift = CONFIG.caDrift, caEdge = CONFIG.caEdge, caAlpha = CONFIG.caAlpha, caRadius = caR;
   for (let k = 0; k < caCode.length; k++) {
     const px = caX[k], py = caY[k], dx = px - lcx, dy = py - lcy, d2 = dx * dx + dy * dy, d = Math.sqrt(d2) || 0.0001;
     const fall = Math.exp(-d2 * caInv2), r = d / caRadius, edge = (r < 1) ? caEdge * 4 * r * (1 - r) : 0, mag = fall + edge;
