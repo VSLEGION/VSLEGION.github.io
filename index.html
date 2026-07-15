@@ -1499,7 +1499,14 @@ function frame(now) {
   const rx = r0x * ct + u0x * st, ry = u0y * st, rz = r0z * ct + u0z * st;   // (r0y = 0)
   const upx = -r0x * st + u0x * ct, upy = u0y * ct, upz = -r0z * st + u0z * ct;
 
-  if (gpu && !forceCPU) {
+  // The library backdrop (opaque swirl flow-field) fully covers the hole in
+  // steady state, so skip the hole's render entirely then — hands the GPU and a
+  // chunk of main-thread time to the swirl. Still render during the dive
+  // (falling) and the roll-back-out (exiting), where the hole is visible.
+  const holeCovered = inLibrary && !exiting && !document.body.classList.contains("falling");
+  if (holeCovered) {
+    /* covered by the backdrop — nothing to draw */
+  } else if (gpu && !forceCPU) {
     // GPU path: the compute shader does the ray-march per cell, the render pass
     // draws the glyphs. Same math as the loop below, off the main thread.
     const _g0 = performance.now();
@@ -1670,8 +1677,8 @@ function frame(now) {
   // Rotate the tesseract world (hover drift + drag inertia) while in the library.
   updateTesseract();
 
-  // Draw warm grain overlay while in reservoir mode.
-  if (rT > 0.01) drawGrain(rT);
+  // Draw warm grain overlay while in reservoir mode (skip when the hole is hidden).
+  if (rT > 0.01 && !holeCovered) drawGrain(rT);
 
   // Render continuously — never pause, even when the tab is unfocused/backgrounded.
   requestAnimationFrame(frame);
@@ -2341,7 +2348,7 @@ function frame(now) {
   const heatR = CONFIG.heatRadius * zoomInv, caR = CONFIG.caRadius * zoomInv;
   const inv2sig2 = 1 / (2 * heatR * heatR);
   const caInv2 = 1 / (2 * caR * caR);
-  const caCullSq = (caR * 2.6) ** 2;
+  const caCullSq = (caR * 2.0) ** 2;   // tighter cull: fringe past ~2σ is ~invisible → fewer CA blits
   const lensR = CONFIG.lensRadius * zoomInv, lensR2 = lensR * lensR;
   const swirl = CONFIG.swirl, swirlPow = CONFIG.swirlPower, lensMag = CONFIG.lensMag;
   const noiseScale = CONFIG.noiseScale, noiseTime = CONFIG.noiseTime, octaves = CONFIG.octaves;
