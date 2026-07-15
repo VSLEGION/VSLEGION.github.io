@@ -322,6 +322,9 @@ export async function initWebGPU(opts) {
   const uniformArr = new Float32Array(13 * 4);
 
   function setGrid(g) {
+    // Never build 0-size GPU resources: a 0×N texture is a validation error that
+    // corrupts the pipeline (seen during zoom transitions / 0-size viewports).
+    if (!fieldCanvas.width || !fieldCanvas.height || g.cols < 1 || g.rows < 1) return;
     gridCols = g.cols; gridRows = g.rows;
 
     cellBuf?.destroy?.();

@@ -1282,23 +1282,28 @@ window.__perf = () => ({ fps:+fpsAvg.toFixed(1), ms2D:+ms2D.toFixed(2), msGPUsub
 window.__benchGPU = (n) => (gpu ? gpu.benchGPU(n) : Promise.resolve(null));
 
 // ---- Browser-zoom normalization --------------------------------------------
-// Ctrl +/- zoom rescales CSS pixels, which used to rescale the glyph grid with
-// it. outerWidth is reported in OS-level pixels (zoom-invariant) while
-// innerWidth shrinks as zoom grows, so their ratio estimates the zoom level;
-// snapping to the browsers' real zoom stops filters out scrollbar/chrome noise.
-// Glyph size is divided by the zoom (same PHYSICAL scale + density at any
-// zoom) and the DPR cap is multiplied by it (same full device resolution and
-// the same per-frame cost at any zoom).
-const ZOOM_STOPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
+// Ctrl +/- zoom rescales CSS pixels, which would rescale the glyph grid with it.
+// devicePixelRatio moves EXACTLY with browser zoom, so dividing it by its value
+// at load (which folds in the display's base density / OS scaling) gives the
+// pure zoom factor — robust, unlike the flaky window.outerWidth ratio (which is
+// 0 in some embeds and reports OS-scaled units on Windows). The glyph size is
+// divided by this so the field keeps the same PHYSICAL scale + density at any
+// zoom, and the DPR cap is multiplied by it so device resolution stays constant.
+const DPR0 = window.devicePixelRatio || 1;
 function browserZoom() {
-  try { if (window.self !== window.top) return 1; } catch (e) { return 1; }   // embedded frame: ratio is meaningless
-  const raw = (window.outerWidth || 0) / Math.max(1, window.innerWidth);
-  if (!isFinite(raw) || raw <= 0) return 1;
-  let z = 1, best = Infinity;
-  for (const s of ZOOM_STOPS) { const d = Math.abs(raw - s); if (d < best) { best = d; z = s; } }
-  return Math.min(3, Math.max(0.5, z));   // beyond 300%, let accessibility zoom win
+  const z = (window.devicePixelRatio || 1) / DPR0;
+  return (isFinite(z) && z > 0) ? Math.min(3, Math.max(0.4, z)) : 1;
 }
 window.__browserZoom = browserZoom;       // shared with the swirl-backdrop renderer
+
+// Some browsers don't emit a 'resize' on Ctrl +/- alone; watch devicePixelRatio
+// so the grid always re-fits the viewport the instant the zoom changes.
+if (window.matchMedia) {
+  (function armZoomWatch() {
+    window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`)
+      .addEventListener("change", () => { window.dispatchEvent(new Event("resize")); armZoomWatch(); }, { once: true });
+  })();
+}
 
 function resize() {
   const zoom = browserZoom();
@@ -1309,6 +1314,10 @@ function resize() {
   // The cap scales with zoom so device-pixel resolution stays constant.
   dpr = Math.min(window.devicePixelRatio || 1, (gpu ? 2.0 : CONFIG.maxDPR) * zoom);
   W = window.innerWidth; H = window.innerHeight;
+  // Guard against a transient 0-size viewport (mid-zoom / not-yet-laid-out): a
+  // 0-width canvas makes the GPU build an invalid 0×N texture, which corrupts the
+  // renderer and leaves the field broken. Bail until the viewport is real.
+  if (W < 1 || H < 1) return;
   canvas.width = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1316,8 +1325,8 @@ function resize() {
   ctx.textBaseline = "top";
   cellW = ctx.measureText("M").width || fontPx * 0.6;
   cellH = fontPx * CONFIG.lineHeight;
-  cols = Math.ceil(W / cellW) + 1;
-  rows = Math.ceil(H / cellH) + 1;
+  cols = Math.ceil(W / cellW) + 2;   // +2 margin guarantees the grid always overfills the canvas
+  rows = Math.ceil(H / cellH) + 2;
   buildAtlas();
   if (gpu) { sizeGpuCanvas(); gpu.setGrid({ cols, rows }); }   // resize/re-upload GPU resources
 }
@@ -2304,13 +2313,14 @@ function resize() {
   fontPx = CONFIG.fontSize * zoomInv;
   dpr = Math.min(window.devicePixelRatio || 1, CONFIG.maxDPR * zoom);
   W = window.innerWidth; H = window.innerHeight;
+  if (W < 1 || H < 1) return;            // skip degenerate 0-size viewport (mid-zoom / hidden)
   canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.font = `${fontPx}px ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace`;
   ctx.textBaseline = "top";
   cellW = ctx.measureText("M").width || fontPx * 0.6;
   cellH = fontPx * CONFIG.lineHeight;
-  cols = Math.ceil(W / cellW) + 1; rows = Math.ceil(H / cellH) + 1;
+  cols = Math.ceil(W / cellW) + 2; rows = Math.ceil(H / cellH) + 2;
   buildGeometry(); buildAtlas();
 }
 window.addEventListener("resize", () => { if (active) resize(); });
