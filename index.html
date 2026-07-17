@@ -677,16 +677,18 @@
     /* Swirl flow-field library backdrop: above the black hole, below the tabs.
        Fades in with the library; the instant Back is pressed (.exiting) it fades
        out so the black hole's rollback animation plays underneath, untouched. */
-    #reservoir-swirl {
+    #reservoir-swirl, #reservoir-swirl-gpu {
       position: fixed; inset: 0; z-index: 2;
       opacity: 0; pointer-events: none; transition: opacity .45s ease;
     }
-    body.library:not(.exiting) #reservoir-swirl { opacity: 1; }
+    #reservoir-swirl-gpu { display: none; }   /* shown only when the WebGPU swirl takes over */
+    body.library:not(.exiting) #reservoir-swirl,
+    body.library:not(.exiting) #reservoir-swirl-gpu { opacity: 1; }
 
     /* During the choreographed Back exit, JS drives the tab opacities frame-by-
        frame, so CSS transitions must not smear them. */
     body.exiting #tesseract, body.exiting #reservoirBack,
-    body.exiting #reservoir-swirl,
+    body.exiting #reservoir-swirl, body.exiting #reservoir-swirl-gpu,
     body.exiting .stage, body.exiting .controls { transition: none !important; }
 
     /* Slightly smaller cards inside the tesseract so all five stacks sit in
@@ -738,6 +740,7 @@
   <canvas id="field-gpu"></canvas>   <!-- WebGPU target; replaces #field when the GPU renderer initialises -->
   <canvas id="grain"></canvas>
   <canvas id="reservoir-swirl"></canvas>   <!-- library backdrop: swirl flow field, shown only in the library -->
+  <canvas id="reservoir-swirl-gpu"></canvas>   <!-- WebGPU swirl target; replaces #reservoir-swirl when the GPU renderer initialises -->
 
   <!-- Foreground UI: retro pixel headline + buttons, centered over the black hole. -->
   <div class="stage">
@@ -1351,7 +1354,7 @@ const codeData = (() => {
 (async () => {
   try {
     const { initWebGPU } = await import("./webgpu-renderer.js");
-    const r = await initWebGPU({ fieldCanvas: fieldGpu, atlasCanvas: atlasBase, codeData });
+    const r = await initWebGPU({ fieldCanvas: fieldGpu, getAtlasCanvas: () => atlasBase, codeData });
     if (r) {
       gpu = r;
       resize();                           // re-apply sizing at GPU DPR + guarantee a correct grid
@@ -1856,7 +1859,9 @@ aboutOverlay.addEventListener("click", e => { if (e.target === aboutOverlay) set
    ===================================================================== */
 const fallFlash = $("fall-flash");
 const reservoirBackEl = $("reservoirBack");
-const reservoirSwirlEl = $("reservoir-swirl");
+// Both swirl layers (2D + WebGPU) share the fade; only one is ever displayed.
+const swirlLayers = [$("reservoir-swirl"), $("reservoir-swirl-gpu")];
+const setSwirlOpacity = (v) => swirlLayers.forEach(el => { el.style.opacity = v; });
 const stageEl = document.querySelector(".stage");
 const controlsEl = document.querySelector(".controls");
 let tesseractBuilt = false, tessWorld = null, tessEl = null;
@@ -2019,7 +2024,7 @@ function advanceExit(now) {
   // The swirl flow-field dissolves in lockstep with the streaming code resolving
   // back into the hole (same `reveal` curve as reservoirT), so it cross-blends
   // with the original background reforming instead of popping out on its own.
-  reservoirSwirlEl.style.opacity = (1 - reveal).toFixed(3);
+  setSwirlOpacity((1 - reveal).toFixed(3));
 
   // Tabs + back button warp away over WARP_MS.
   const warpAway = smooth(Math.min(p / (WARP_MS / EXIT_DUR), 1));
@@ -2040,7 +2045,7 @@ function finishExit() {
   document.body.classList.remove("library", "exiting");
   tessEl.style.opacity = "";             // hand every inline opacity back to CSS
   reservoirBackEl.style.opacity = "";
-  reservoirSwirlEl.style.opacity = "";
+  setSwirlOpacity("");
   stageEl.style.opacity = ""; controlsEl.style.opacity = "";
   worldScale = 1;                        // reset so the next visit starts full-size
   holeScale = 1;                         // hole at full size for normal operation
@@ -2267,6 +2272,8 @@ function fbm(x, y, z, octaves) {
 
 const canvas = document.getElementById("reservoir-swirl");
 const ctx = canvas.getContext("2d", { alpha: false });
+const canvasGpu = document.getElementById("reservoir-swirl-gpu");
+let sgpu = null;   // WebGPU swirl renderer (null -> Canvas-2D fallback)
 let W = 0, H = 0, dpr = 1, cellW = 0, cellH = 0, cols = 0, rows = 0;
 let fontPx = CONFIG.fontSize, zoomInv = 1;   // browser-zoom normalized in resize()
 
@@ -2333,9 +2340,37 @@ function resize() {
   cellH = fontPx * CONFIG.lineHeight;
   cols = Math.ceil(W / cellW) + 2; rows = Math.ceil(H / cellH) + 2;
   buildGeometry(); buildAtlas();
+  if (sgpu) {                                   // mirror size onto the GPU target + re-upload
+    canvasGpu.width = canvas.width; canvasGpu.height = canvas.height;
+    sgpu.setGrid({ cols, rows });
+  }
 }
 window.addEventListener("resize", () => { if (active) resize(); });
 resize();
+
+// Flatten the source-text sampling data once, then try to bring up the GPU swirl.
+const codeData = (() => {
+  const codesFlat = [], lineOffsets = [], lineLens = [];
+  let off = 0;
+  for (const arr of LINE_CODES) {
+    lineOffsets.push(off); lineLens.push(arr.length);
+    for (let i = 0; i < arr.length; i++) codesFlat.push(arr[i]);
+    off += arr.length;
+  }
+  return { codesFlat, lineOffsets, lineLens, charCol: Array.from(charCol) };
+})();
+(async () => {
+  try {
+    const { initSwirlGPU } = await import("./swirl-webgpu.js");
+    const r = await initSwirlGPU({ canvas: canvasGpu, getAtlasCanvas: () => atlasBase, codeData });
+    if (r) {
+      sgpu = r;
+      resize();                             // re-apply sizing + build the GPU grid
+      canvasGpu.style.display = "block";    // GPU takes over; retire the 2D canvas
+      canvas.style.display = "none";
+    }
+  } catch (e) { console.warn("[swirl-gpu] disabled:", e); }
+})();
 
 let mxPx = W / 2, myPx = H / 2, lcx = W / 2, lcy = H / 2;
 window.addEventListener("pointermove", e => { mxPx = e.clientX; myPx = e.clientY; });
@@ -2371,6 +2406,31 @@ function frame(now) {
   const panU = (lcx / W - 0.5) * 2 * pan, panV = (lcy / H - 0.5) * 2 * pan;
   const panCols = panU * cols, panRows = panV * rows;
   const panNX = panU * noiseScale, panNY = panV * noiseScale;
+
+  // GPU path: the compute shader does the swirl/lens/ambient per cell and the
+  // fragment shader blits the glyphs + gathers the chromatic aberration — the
+  // whole per-cell drawImage storm below moves off the main thread. Radii and
+  // offsets are CSS px here, so scale them to device px for the shader.
+  if (sgpu) {
+    const caRDev = caR * dpr, heatRDev = heatR * dpr;
+    sgpu.render({
+      cellWDev: cw * dpr, cellHDev: chh * dpr, Wdev: canvasGpu.width, Hdev: canvasGpu.height,
+      tileWd, tileHd, atlasCols: atlasChars.length, levels,
+      t, tCA, asp, nLines: LINE_CODES.length,
+      swirl, swirlPower: swirlPow, lensMag, lensRDev: lensR * dpr,
+      curXDev: cx * dpr, curYDev: cy * dpr, heatInv2Dev: 1 / (2 * heatRDev * heatRDev), heatGain,
+      noiseScale, noiseTime, octaves, contrast: CONFIG.contrast,
+      ambientLow: CONFIG.ambientLow, ambientHigh: CONFIG.ambientHigh, panCols, panRows,
+      panNX, panNY,
+      caStrengthDev: CONFIG.caStrength * zoomInv * dpr, caInv2Dev: 1 / (2 * caRDev * caRDev),
+      caRadiusDev: caRDev, caSmoke: CONFIG.caSmoke,
+      caSmokeFreqDev: (CONFIG.caSmokeFreq / zoomInv) / dpr, caDrift: CONFIG.caDrift,
+      caEdge: CONFIG.caEdge, caAlpha: CONFIG.caAlpha,
+      caCullSqDev: (caRDev * 2.0) ** 2,
+    });
+    if (active && !document.hidden) { pending = true; requestAnimationFrame(frame); }
+    return;
+  }
 
   ctx.fillStyle = "#1b1222"; ctx.fillRect(0, 0, W, H);
   caCode.length = 0; caX.length = 0; caY.length = 0;

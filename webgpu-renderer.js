@@ -266,7 +266,11 @@ fn lum(c: vec3<f32>) -> f32 { return dot(c, vec3<f32>(0.2126, 0.7152, 0.0722)); 
 `;
 
 export async function initWebGPU(opts) {
-  const { fieldCanvas, atlasCanvas, codeData } = opts;
+  // getAtlasCanvas() is a GETTER, not the canvas itself: buildAtlas() creates a
+  // brand-new atlas canvas whenever the grid/font changes (e.g. on browser zoom).
+  // A captured reference goes stale, so the GPU would keep uploading the OLD
+  // atlas while the shader sampled it with the NEW tile size => garbled glyphs.
+  const { fieldCanvas, getAtlasCanvas, codeData } = opts;
   if (!navigator.gpu) { console.info("[webgpu] navigator.gpu unavailable — using Canvas 2D"); return null; }
 
   let device, ctx, format;
@@ -317,15 +321,18 @@ export async function initWebGPU(opts) {
   });
 
   let cellBuf = null, atlasTex = null, sceneTex = null, computeBG = null, renderBG = null, compositeBG = null;
-  let gridCols = 0, gridRows = 0;
+  let gridCols = 0, gridRows = 0, atlasW = 0, atlasH = 0;
   let lastUni = null;                       // remembered for benchGPU()
   const uniformArr = new Float32Array(13 * 4);
 
   function setGrid(g) {
     // Never build 0-size GPU resources: a 0×N texture is a validation error that
     // corrupts the pipeline (seen during zoom transitions / 0-size viewports).
+    const atlasCanvas = getAtlasCanvas();
     if (!fieldCanvas.width || !fieldCanvas.height || g.cols < 1 || g.rows < 1) return;
+    if (!atlasCanvas || !atlasCanvas.width || !atlasCanvas.height) return;
     gridCols = g.cols; gridRows = g.rows;
+    atlasW = atlasCanvas.width; atlasH = atlasCanvas.height;
 
     cellBuf?.destroy?.();
     cellBuf = device.createBuffer({ size: Math.max(4, g.cols * g.rows * 4), usage: GPUBufferUsage.STORAGE });
@@ -394,7 +401,7 @@ export async function initWebGPU(opts) {
     a[32]=uni.cellWDev; a[33]=uni.cellHDev; a[34]=uni.Wdev; a[35]=uni.Hdev;
     a[36]=uni.tileWd; a[37]=uni.tileHd; a[38]=uni.atlasCols; a[39]=uni.levels;
     a[40]=uni.octaves; a[41]=uni.fallbackCol; a[42]=uni.maxSteps; a[43]=uni.nLines;
-    a[44]=gridCols; a[45]=gridRows; a[46]=atlasCanvas.width; a[47]=atlasCanvas.height;
+    a[44]=gridCols; a[45]=gridRows; a[46]=atlasW;            a[47]=atlasH;
     a[48]=uni.velMin; a[49]=uni.velMax; a[50]=uni.bloomStrength; a[51]=uni.bloomThreshold;
     device.queue.writeBuffer(uniformBuf, 0, a);
 
