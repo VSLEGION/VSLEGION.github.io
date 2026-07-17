@@ -733,6 +733,53 @@
 
     /* Exit: echoes collapse/fade first, then the fall reverses. */
     body.tess-collapsing .tess-layer.echo { opacity: 0 !important; }
+
+    /* =========================================================
+       PHONE (<=700px): the 3D tesseract is unreadable and heavy at this width,
+       so the project reservoir becomes a plain vertical, scrollable list.
+       ========================================================= */
+    @media (max-width: 700px) {
+      #tesseract {
+        perspective: none;
+        touch-action: pan-y;              /* scroll the list instead of drag-orbiting */
+        overflow: hidden;
+      }
+      /* will-change/transform/perspective would make this a containing block for
+         the position:fixed list below, sizing it to the world instead of the
+         screen. Neutralise all three so the list fills the viewport. */
+      #tesseract-world {
+        transform: none !important; will-change: auto; transform-style: flat;
+        position: absolute; inset: 0;
+      }
+      .tess-layer.echo { display: none; }  /* belt-and-braces: echoes are not built on phones */
+
+      /* The real row: a scrollable column filling the screen. */
+      body.library #reservoir-projects.tess-front,
+      body.reservoir #reservoir-projects {
+        position: fixed; inset: 0;
+        transform: none !important;
+        width: auto; max-width: none; margin: 0;
+        display: flex; flex-direction: column; flex-wrap: nowrap;
+        align-items: center; justify-content: flex-start;
+        gap: 1rem;
+        padding: 4.5rem 1rem 5.5rem;      /* clear of the Back button */
+        overflow-y: auto; overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch; touch-action: pan-y;
+      }
+      .proj-card, .proj-echo, #tesseract .proj-card, #tesseract .proj-echo {
+        width: min(88vw, 340px); flex: 0 0 auto;
+      }
+      /* Cards animate in via WAAPI; keep the hover lift from feeling stuck on touch. */
+      .proj-card:hover { transform: none; }
+
+      /* Hero chrome + About panel at phone size. */
+      .actions { gap: 0.8rem; }
+      .btn { padding: 12px 14px; }
+      #about-overlay { padding: 1rem; }
+      #about-panel { width: 94vw; max-height: 74vh; padding: 1.25rem; }
+      #about-overlay .about-actions { gap: 0.6rem; }
+      #about-overlay .about-btn { font-size: 9px; padding: 10px 11px; }
+    }
   </style>
 </head>
 <body>
@@ -1312,19 +1359,41 @@ if (window.matchMedia) {
   })();
 }
 
+// ---- Phone quality tier -----------------------------------------------------
+// iOS Safari has no WebGPU on most devices, so phones run the Canvas-2D
+// ray-tracer. Two competing needs: the art needs enough COLUMNS to read (a
+// phone at the desktop 16px glyph only fits ~43 vs 148 — blocky), but every
+// extra cell costs a full geodesic march. So on small screens we shrink the
+// glyph to buy detail, and buy the cost back with a shorter march + lower DPR.
+const PHONE_W = 700;              // treat viewports narrower than this as phones
+const PHONE_MIN_COLS = 66;        // never let the art get coarser than this
+function isPhone() { return W < PHONE_W; }
+// Cheaper march on phones: most rays still exit early, and the shape/lensing
+// holds well below the desktop step budget.
+function activeSteps() { return (isPhone() && !gpu) ? 90 : CONFIG.steps; }
+
 function resize() {
   const zoom = browserZoom();
-  fontPx = CONFIG.fontSize / zoom;        // CSS px shrink as zoom grows -> physical glyph size constant
-  // 2D is DPR-capped for perf; the GPU path renders sharper but the per-pixel
-  // bloom pass scales with pixel count, so cap at 2.0 (native on 2x displays,
-  // ~36% fewer pixels than 2.5) to keep it smooth on hi-DPI / 4K screens.
-  // The cap scales with zoom so device-pixel resolution stays constant.
-  dpr = Math.min(window.devicePixelRatio || 1, (gpu ? 2.0 : CONFIG.maxDPR) * zoom);
   W = window.innerWidth; H = window.innerHeight;
   // Guard against a transient 0-size viewport (mid-zoom / not-yet-laid-out): a
   // 0-width canvas makes the GPU build an invalid 0×N texture, which corrupts the
   // renderer and leaves the field broken. Bail until the viewport is real.
   if (W < 1 || H < 1) return;
+
+  // Responsive glyph size: shrink it on narrow screens so the art keeps at least
+  // PHONE_MIN_COLS columns of detail. On desktop the width-derived size exceeds
+  // CONFIG.fontSize, so the min() leaves 16px — i.e. desktop is unchanged.
+  const fitFont = W / (0.548 * PHONE_MIN_COLS);
+  fontPx = Math.min(CONFIG.fontSize, Math.max(6.5, fitFont)) / zoom;
+
+  // 2D is DPR-capped for perf; the GPU path renders sharper but the per-pixel
+  // bloom pass scales with pixel count, so cap at 2.0 (native on 2x displays,
+  // ~36% fewer pixels than 2.5) to keep it smooth on hi-DPI / 4K screens.
+  // Phones on the Canvas-2D path cap lower still — fill rate is precious there
+  // and the panel is physically tiny. The cap scales with zoom so device-pixel
+  // resolution stays constant.
+  const cap = gpu ? 2.0 : (isPhone() ? 1.25 : CONFIG.maxDPR);
+  dpr = Math.min(window.devicePixelRatio || 1, cap * zoom);
   canvas.width = Math.round(W * dpr);
   canvas.height = Math.round(H * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1444,6 +1513,11 @@ function setReservoir(on) {
 function frame(now) {
   const t = now * 0.001;
   const asp = W / H;
+  // Frame the hole on the SHORTER axis so it composes properly on tall phone
+  // screens instead of blowing up past the narrow width. Landscape (asp >= 1)
+  // is bit-for-bit the old behaviour: ndcXScale = asp, ndcYScale = 1.
+  const ndcXScale = asp >= 1 ? asp : 1;
+  const ndcYScale = asp >= 1 ? 1 : 1 / asp;
 
   // Frame timing is cheap and always on; per-fate counters reset each frame.
   const dtMs = now - lastT; lastT = now;
@@ -1464,7 +1538,7 @@ function frame(now) {
   const octaves = CONFIG.octaves, noiseScale = CONFIG.noiseScale, drift = CONFIG.drift;
   const beam = CONFIG.beam, ringGlow = CONFIG.ringGlow, spin = CONFIG.spin;
   const bgGlow = CONFIG.bgGlow, bgScroll = CONFIG.bgScroll;
-  const maxSteps = CONFIG.steps, cw = cellW, chh = cellH;
+  const maxSteps = activeSteps(), cw = cellW, chh = cellH;
   if (!exiting) reservoirT += (reservoirTarget - reservoirT) * reservoirLerp;   // exit drives reservoirT directly (re-form)
   decodeT    += (decodeTarget    - decodeT)    * (decodeTarget < decodeT ? DECODE_LERP_CLOSE : DECODE_LERP);
   if (aboutPending && reservoirT >= 0.5) {   // reveal banner once black hole is half gone
@@ -1518,7 +1592,7 @@ function frame(now) {
     // draws the glyphs. Same math as the loop below, off the main thread.
     const _g0 = performance.now();
     gpu.render({
-      camx, camy, camz, fov, fx, fy, fz, asp,
+      camx, camy, camz, fov, fx, fy, fz, asp: ndcXScale, ndcYScale,
       rx, ry, rz, rT, upx, upy, upz, t,
       Rhor, diskIn, diskOut, diskSpan,
       beam, ringGlow, spin, drift,
@@ -1527,7 +1601,7 @@ function frame(now) {
       cellWDev: cellW * dpr, cellHDev: cellH * dpr, Wdev: canvas.width, Hdev: canvas.height,
       tileWd, tileHd, atlasCols: atlasChars.length, levels,
       octaves, fallbackCol: FALLBACK_COL, maxSteps, nLines: LINE_CODES.length,
-      velMin: FX.velMin, velMax: FX.velMax, bloomStrength: FX.bloomStrength, bloomThreshold: FX.bloomThreshold,
+      bloomStrength: FX.bloomStrength, bloomThreshold: FX.bloomThreshold,
     });
     msGPUsubmit += ((performance.now() - _g0) - msGPUsubmit) * 0.1;
   } else {
@@ -1564,8 +1638,8 @@ function frame(now) {
       const px = gx * cw, py = gy * chh;
 
       // Build the primary ray for this cell (cell-centre through the camera frustum).
-      const ndcx = ((px + cw * 0.5) / W * 2 - 1) * asp;
-      const ndcy = -((py + chh * 0.5) / H * 2 - 1);
+      const ndcx = ((px + cw * 0.5) / W * 2 - 1) * ndcXScale;
+      const ndcy = -((py + chh * 0.5) / H * 2 - 1) * ndcYScale;
       let dx = fx + rx * (ndcx * fov) + upx * (ndcy * fov);
       let dy = fy + ry * (ndcx * fov) + upy * (ndcy * fov);
       let dz = fz + rz * (ndcx * fov) + upz * (ndcy * fov);
@@ -1889,7 +1963,10 @@ function buildTesseract() {
   const front = reservoirProjects;          // the real, clickable project row
   front.classList.add("tess-front");
 
-  const ECHO = 8, ZSTEP = -240, YSTEP = -16;   // 8 shelves rising up-and-back → an infinite tower
+  // Phones get NO echo shelves: 8 clones of every card (each with a CSS filter)
+  // is a lot of compositing for a small GPU, and the 3D tower is unreadable at
+  // phone width — there the front row becomes a plain scrollable column (CSS).
+  const ECHO = isPhone() ? 0 : 8, ZSTEP = -240, YSTEP = -16;   // shelves rising up-and-back → an infinite tower
   for (let i = 1; i <= ECHO; i++) {
     const layer = document.createElement("div");
     layer.className = "tess-layer echo";
@@ -1911,7 +1988,7 @@ function buildTesseract() {
   world.appendChild(front);                          // …real row last (z = 0, on top)
   document.body.appendChild(tess);
   tessWorld = world; tessEl = tess;
-  attachTesseractControls(tess);
+  if (!isPhone()) attachTesseractControls(tess);   // phone: let the list scroll instead of drag-orbit
   tesseractBuilt = true;
 }
 

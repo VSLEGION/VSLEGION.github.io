@@ -25,7 +25,7 @@
 const U_STRUCT = /* wgsl */ `
 struct U {
   cam   : vec4<f32>,   // xyz camera position, w = fov
-  fwd   : vec4<f32>,   // xyz forward,          w = aspect
+  fwd   : vec4<f32>,   // xyz forward,          w = ndcXScale (aspect in landscape, 1 in portrait)
   rgt   : vec4<f32>,   // xyz right (tilted),   w = rT (reservoir/decode mix)
   up    : vec4<f32>,   // xyz up (tilted),      w = t (seconds)
   geom  : vec4<f32>,   // horizon, diskInner, diskOuter, diskSpan
@@ -36,7 +36,7 @@ struct U {
   atlas : vec4<f32>,   // tileWd, tileHd, atlasCols, levels
   misc  : vec4<f32>,   // octaves, fallbackCol, maxSteps, nLines
   dims  : vec4<f32>,   // cols, rows, atlasW, atlasH
-  fx    : vec4<f32>,   // velMin, velMax, bloomStrength, bloomThreshold
+  fx    : vec4<f32>,   // ndcYScale, -, bloomStrength, bloomThreshold
 };
 const PI  : f32 = 3.14159265359;
 const TAU : f32 = 6.28318530718;
@@ -96,7 +96,7 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   if (gx >= cols || gy >= rows) { return; }
   let idx = u32(gy * cols + gx);
 
-  let fov = u.cam.w; let asp = u.fwd.w; let rT = u.rgt.w; let t = u.up.w;
+  let fov = u.cam.w; let ndcXScale = u.fwd.w; let ndcYScale = u.fx.x; let rT = u.rgt.w; let t = u.up.w;
   let Rhor = u.geom.x; let diskIn = u.geom.y; let diskOut = u.geom.z; let diskSpan = u.geom.w;
   let beam = u.phys.x; let ringGlow = u.phys.y; let spin = u.phys.z; let drift = u.phys.w;
   let bgGlow = u.bg.x; let bgScroll = u.bg.y; let noiseScale = u.bg.z; let contrast = u.bg.w;
@@ -108,8 +108,8 @@ fn cs(@builtin(global_invocation_id) gid: vec3<u32>) {
   // Primary ray through the cell centre.
   let cw = u.grid.x; let chh = u.grid.y; let Wd = u.grid.z; let Hd = u.grid.w;
   let px = f32(gx) * cw; let py = f32(gy) * chh;
-  let ndcx = ((px + cw * 0.5) / Wd * 2.0 - 1.0) * asp;
-  let ndcy = -((py + chh * 0.5) / Hd * 2.0 - 1.0);
+  let ndcx = ((px + cw * 0.5) / Wd * 2.0 - 1.0) * ndcXScale;
+  let ndcy = -((py + chh * 0.5) / Hd * 2.0 - 1.0) * ndcYScale;
   var d = normalize(fwd + rgt * (ndcx * fov) + up * (ndcy * fov));
 
   let hvec = cross(cam, d);           // h2 = |cam x d|^2 (conserved)
@@ -402,7 +402,7 @@ export async function initWebGPU(opts) {
     a[36]=uni.tileWd; a[37]=uni.tileHd; a[38]=uni.atlasCols; a[39]=uni.levels;
     a[40]=uni.octaves; a[41]=uni.fallbackCol; a[42]=uni.maxSteps; a[43]=uni.nLines;
     a[44]=gridCols; a[45]=gridRows; a[46]=atlasW;            a[47]=atlasH;
-    a[48]=uni.velMin; a[49]=uni.velMax; a[50]=uni.bloomStrength; a[51]=uni.bloomThreshold;
+    a[48]=uni.ndcYScale; a[49]=0; a[50]=uni.bloomStrength; a[51]=uni.bloomThreshold;
     device.queue.writeBuffer(uniformBuf, 0, a);
 
     const enc = device.createCommandEncoder();
