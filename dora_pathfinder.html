@@ -203,7 +203,8 @@
             <div class="row"><span class="dot" style="background:#5b6473"></span>Visited</div>
             <div class="row"><span class="dot" style="background:#ffd24a"></span>Frontier</div>
             <div class="row"><span class="dot" style="background:#f97d15"></span>UAV / current</div>
-            <div class="row"><span class="swatch-line" style="background:#f97d15"></span>Best path</div>
+            <div class="row"><span class="swatch-line" style="background:#94a3b8"></span>Raw A* path</div>
+            <div class="row"><span class="swatch-line" style="background:#f97d15"></span>Smoothed trajectory</div>
             <div class="row"><span class="dot" style="background:#ef4444"></span>No-fly zone</div>
           </div>
           <div class="stage-hint" id="stageHint">Click to add a waypoint · Shift-click to drop a no-fly zone</div>
@@ -250,7 +251,8 @@
             <button class="tool-btn wide" id="runBtn">▶ Run Search</button>
             <button class="tool-btn ghost" id="pauseBtn">Pause</button>
             <button class="tool-btn ghost" id="resetBtn">Reset</button>
-            <button class="tool-btn ghost wide" id="editBtn">✎ Edit Waypoints: OFF</button>
+            <button class="tool-btn ghost" id="editBtn">✎ Edit: OFF</button>
+            <button class="tool-btn ghost" id="clearBtn">🗑 Clear</button>
           </div>
         </div>
 
@@ -273,6 +275,11 @@
             <div class="grp">Fuel Consumption</div>
             <div class="seg-list" id="t-segs"></div>
             <div class="row" style="margin-top:6px;"><span class="k">Total fuel</span><span class="v hot" id="t-total">0.000000 kg</span></div>
+
+            <div class="grp">Smoothed Trajectory</div>
+            <div class="row"><span class="k">Min turn radius</span><span class="v" id="t-radius">– m</span></div>
+            <div class="row"><span class="k">Raw path length</span><span class="v" id="t-rawlen">– m</span></div>
+            <div class="row"><span class="k">Smoothed length</span><span class="v" id="t-smoothlen">– m</span></div>
 
             <div class="status" id="t-status">Idle — press Run</div>
           </div>
@@ -637,6 +644,238 @@
   }
 
   /* =========================================================================
+     Trajectory smoothing — line-of-sight simplification + curvature-
+     constrained fillets + obstacle-hugging arcs.
+     (Port of pathfinder/planning/trajectory/*.)  Turns the jagged discrete
+     A* path into a smooth, flyable trajectory that clears every no-fly zone.
+     ========================================================================= */
+  const TAU = Math.PI * 2;
+  function uvec(a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+    return d < 1e-9 ? { x: 0, y: 0 } : { x: dx / d, y: dy / d };
+  }
+
+  // Greedy line-of-sight "string pulling": keep only vertices we must bend at.
+  function simplifyLOS(path, env) {
+    if (path.length <= 2) return path.slice();
+    const out = [path[0]];
+    let anchor = 0;
+    while (anchor < path.length - 1) {
+      let next = anchor + 1;
+      for (let j = path.length - 1; j > anchor + 1; j--) {
+        if (env.isValidSegment(path[anchor], path[j])) { next = j; break; }
+      }
+      out.push(path[next]);
+      anchor = next;
+    }
+    return out;
+  }
+
+  // Simplify while pinning the mission waypoints (each leg stays a leg).
+  function simplifyMission(rawPath, wps, env) {
+    const idx = [];
+    let from = 0;
+    for (const wp of wps) {
+      for (let i = from; i < rawPath.length; i++) {
+        if (rawPath[i].x === wp.x && rawPath[i].y === wp.y) { idx.push(i); from = i; break; }
+      }
+    }
+    if (idx.length < 2) return simplifyLOS(rawPath, env);
+    let out = [];
+    for (let s = 0; s < idx.length - 1; s++) {
+      const chunk = rawPath.slice(idx[s], idx[s + 1] + 1);
+      const sc = simplifyLOS(chunk, env);
+      out = out.length ? out.concat(sc.slice(1)) : sc.slice();
+    }
+    return out;
+  }
+
+  function ensureOutside(p, c, R, m = 1.05) {
+    const d = Math.hypot(p.x - c.x, p.y - c.y);
+    if (d >= R) return { x: p.x, y: p.y };
+    if (d < 1e-9) return { x: c.x + R * m, y: c.y };
+    const s = (R * m) / d;
+    return { x: c.x + (p.x - c.x) * s, y: c.y + (p.y - c.y) * s };
+  }
+
+  // Which polyline runs wrap which zone (port of obstacle_arcs.detect_detours).
+  // wpSet holds poly indices that are mission waypoints; a detour arc may never
+  // span across one (each waypoint must be flown through, not bypassed).
+  function detectDetours(poly, zones, Rmin, margin, wpSet = new Set(), band = 1.4) {
+    const n = poly.length, detours = [];
+    if (n < 2 || !zones.length) return detours;
+    for (const z of zones) {
+      const c = { x: z.x, y: z.y }, clearance = z.r + margin;
+      const R = Math.max(Rmin, clearance), bd = R * band;
+      const near = poly.map(p => Math.hypot(p.x - c.x, p.y - c.y) <= bd);
+      let k = 0;
+      while (k < n) {
+        if (!near[k]) { k++; continue; }
+        let j = k;
+        while (j + 1 < n && near[j + 1]) j++;
+        let e = k - 1;
+        while (e > 0 && Math.hypot(poly[e].x - c.x, poly[e].y - c.y) <= R) e--;
+        const ei = Math.max(e, 0);
+        let x = j + 1;
+        while (x < n - 1 && Math.hypot(poly[x].x - c.x, poly[x].y - c.y) <= R) x++;
+        const xi = Math.min(x, n - 1);
+        // Skip if a mission waypoint lies strictly inside the span.
+        let crossesWp = false;
+        for (let t = ei + 1; t < xi; t++) if (wpSet.has(t)) { crossesWp = true; break; }
+        if (crossesWp) { k = j + 1; continue; }
+        const A = ensureOutside(poly[ei], c, R), B = ensureOutside(poly[xi], c, R);
+        let mid = k, best = Infinity;
+        for (let t = k; t <= j; t++) {
+          const dd = Math.hypot(poly[t].x - c.x, poly[t].y - c.y);
+          if (dd < best) { best = dd; mid = t; }
+        }
+        const cross = (B.x - A.x) * (poly[mid].y - A.y) - (B.y - A.y) * (poly[mid].x - A.x);
+        detours.push({ c, R, ei, xi, A, B, side: cross > 0 ? -1 : 1 });
+        k = j + 1;
+      }
+    }
+    detours.sort((a, b) => a.ei - b.ei);
+    const acc = []; let lastExit = -1;
+    for (const d of detours) { if (d.ei > lastExit) { acc.push(d); lastExit = d.xi; } }
+    return acc;
+  }
+
+  function buildHuggingArc(d) {
+    const c = d.c, R = d.R, side = d.side, a = d.A, b = d.B;
+    const dA = Math.max(Math.hypot(a.x - c.x, a.y - c.y), R);
+    const dB = Math.max(Math.hypot(b.x - c.x, b.y - c.y), R);
+    const alpha = Math.atan2(a.y - c.y, a.x - c.x);
+    const gamma = Math.atan2(b.y - c.y, b.x - c.x);
+    const beta = Math.acos(Math.max(-1, Math.min(1, R / dA)));
+    const delta = Math.acos(Math.max(-1, Math.min(1, R / dB)));
+    const aA = alpha + side * beta, aB = gamma - side * delta;
+    const tA = { x: c.x + R * Math.cos(aA), y: c.y + R * Math.sin(aA) };
+    const tB = { x: c.x + R * Math.cos(aB), y: c.y + R * Math.sin(aB) };
+    let sweep = aB - aA;
+    if (side > 0) { while (sweep <= 0) sweep += TAU; while (sweep > TAU) sweep -= TAU; }
+    else { while (sweep >= 0) sweep -= TAU; while (sweep < -TAU) sweep += TAU; }
+    return { center: c, R, a0: aA, sweep, tA, tB };
+  }
+
+  function filletParams(uin, uout, avail, Rmin, Rdes) {
+    let ca = uin.x * uout.x + uin.y * uout.y;
+    ca = Math.max(-1, Math.min(1, ca));
+    const theta = Math.acos(ca);
+    if (theta < 0.01) return null;
+    const td = Rdes * Math.tan(theta / 2);
+    let R, trim;
+    if (td <= avail) { R = Rdes; trim = td; }
+    else { R = Math.max(avail / Math.tan(theta / 2), 0.5); trim = avail; }
+    const cross = uin.x * uout.y - uin.y * uout.x;
+    return { R, trim, theta, sign: cross > 0 ? 1 : -1 };
+  }
+
+  function filletArc(corner, uin, uout, fp) {
+    const R = fp.R, trim = fp.trim, sign = fp.sign;
+    const tin = { x: corner.x - trim * uin.x, y: corner.y - trim * uin.y };
+    const px = -uin.y * sign, py = uin.x * sign;
+    const c = { x: tin.x + R * px, y: tin.y + R * py };
+    return { center: c, R, a0: Math.atan2(tin.y - c.y, tin.x - c.x), sweep: sign * fp.theta };
+  }
+
+  function sampleArc(arc, ds, out) {
+    const L = Math.abs(arc.sweep) * arc.R, nn = Math.max(1, Math.ceil(L / ds));
+    for (let i = 0; i <= nn; i++) {
+      const ang = arc.a0 + (i / nn) * arc.sweep;
+      out.push({ x: arc.center.x + arc.R * Math.cos(ang), y: arc.center.y + arc.R * Math.sin(ang) });
+    }
+  }
+
+  // Raw grid path -> smooth sampled trajectory + stats.
+  function smoothTrajectory(rawPath, wps, env, opts = {}) {
+    const margin = opts.margin ?? 4.0, Rmin = opts.Rmin ?? 5.0;
+    const Rdes = opts.Rdes ?? 11.0, ds = opts.ds ?? 1.5;
+    const poly = simplifyMission(rawPath, wps, env);
+    if (poly.length < 3) return { points: poly.slice(), minRadius: Infinity, poly };
+
+    // Poly indices that coincide with a mission waypoint (hard pass-through anchors).
+    const wpSet = new Set();
+    for (let pi = 0; pi < poly.length; pi++) {
+      for (const w of wps) {
+        if (Math.abs(poly[pi].x - w.x) < 1e-6 && Math.abs(poly[pi].y - w.y) < 1e-6) { wpSet.add(pi); break; }
+      }
+    }
+
+    const detours = detectDetours(poly, env.zones, Rmin, margin, wpSet);
+    const byEntry = new Map(detours.map(d => [d.ei, d]));
+
+    // Token stream of straight legs + fixed hugging arcs.
+    const tokens = [];
+    let cursor = poly[0], i = 0;
+    while (i < poly.length - 1) {
+      const d = byEntry.get(i);
+      if (d) {
+        const arc = buildHuggingArc(d);
+        tokens.push({ t: 'line', a: cursor, b: arc.tA });
+        tokens.push({ t: 'arc', arc });
+        tokens.push({ t: 'line', a: arc.tB, b: poly[d.xi] });
+        cursor = poly[d.xi]; i = d.xi; continue;
+      }
+      tokens.push({ t: 'line', a: cursor, b: poly[i + 1] });
+      cursor = poly[i + 1]; i++;
+    }
+
+    // Fillet the line->line junctions (line->arc junctions are already tangent).
+    const m = tokens.length;
+    const trimStart = new Array(m).fill(0), trimEnd = new Array(m).fill(0);
+    const insertAfter = new Array(m).fill(null);
+    let minR = Infinity;
+    for (const d of detours) minR = Math.min(minR, d.R);
+    for (let k = 0; k < m - 1; k++) {
+      const A = tokens[k], B = tokens[k + 1];
+      if (A.t !== 'line' || B.t !== 'line') continue;
+      const uin = uvec(A.a, A.b), uout = uvec(B.a, B.b);
+      const avail = Math.min(
+        Math.hypot(A.b.x - A.a.x, A.b.y - A.a.y),
+        Math.hypot(B.b.x - B.a.x, B.b.y - B.a.y)
+      ) / 2;
+      const fp = filletParams(uin, uout, avail, Rmin, Rdes);
+      if (!fp) continue;
+      trimEnd[k] = fp.trim; trimStart[k + 1] = fp.trim;
+      insertAfter[k] = filletArc(A.b, uin, uout, fp);
+      minR = Math.min(minR, fp.R);
+    }
+
+    // Emit sampled points.
+    const pts = [];
+    const push = p => {
+      if (!pts.length || Math.hypot(p.x - pts[pts.length - 1].x, p.y - pts[pts.length - 1].y) > 1e-6) pts.push(p);
+    };
+    for (let k = 0; k < m; k++) {
+      const t = tokens[k];
+      if (t.t === 'line') {
+        const u = uvec(t.a, t.b);
+        const s = { x: t.a.x + trimStart[k] * u.x, y: t.a.y + trimStart[k] * u.y };
+        const e = { x: t.b.x - trimEnd[k] * u.x, y: t.b.y - trimEnd[k] * u.y };
+        const L = Math.hypot(e.x - s.x, e.y - s.y);
+        if (L > 1e-6) {
+          const nn = Math.max(1, Math.ceil(L / ds));
+          for (let q = 0; q <= nn; q++) push({ x: s.x + (e.x - s.x) * q / nn, y: s.y + (e.y - s.y) * q / nn });
+        }
+      } else {
+        const tmp = []; sampleArc(t.arc, ds, tmp); tmp.forEach(push);
+      }
+      if (insertAfter[k]) { const tmp = []; sampleArc(insertAfter[k], ds, tmp); tmp.forEach(push); }
+    }
+
+    // Safety net: a fillet may bulge slightly toward a nearby zone. Push any
+    // sample that intrudes past the raw radius back onto a thin clearance ring.
+    const net = Math.min(2.5, margin);
+    for (const z of env.zones) {
+      for (const p of pts) {
+        const dx = p.x - z.x, dy = p.y - z.y, d = Math.hypot(dx, dy), lim = z.r + net;
+        if (d < lim && d > 1e-6) { const s = lim / d; p.x = z.x + dx * s; p.y = z.y + dy * s; }
+      }
+    }
+    return { points: pts, minRadius: minR, poly, detours };
+  }
+
+  /* =========================================================================
      Scenarios
      ========================================================================= */
   function buildScene(name) {
@@ -671,7 +910,7 @@
   const vctx = visitedLayer.getContext("2d");
 
   let aircraft = new Aircraft();
-  let env, graph, cost, gen, lastState = null;
+  let env, graph, cost, gen, lastState = null, smoothResult = null;
   let waypoints = [], zones = [];
   let running = false, finished = false, rafId = null;
   let stepsPerFrame = 6;
@@ -700,6 +939,8 @@
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     const pts = [...waypoints];
     for (const z of zones) { pts.push({x:z.x - z.r, y:z.y - z.r}, {x:z.x + z.r, y:z.y + z.r}); }
+    // Empty sandbox: give clicks a sensible default coordinate frame.
+    if (!pts.length) pts.push({ x: 0, y: 0 }, { x: 340, y: 210 });
     for (const p of pts) {
       minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
       minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
@@ -798,7 +1039,13 @@
     };
     if (lastState) {
       if (lastState.final) {
-        drawPath(lastState.completePath, "#f97d15", 3, "rgba(249,125,21,0.6)");
+        if (smoothResult && smoothResult.points.length > 1) {
+          // Raw grid result faded underneath; smooth flyable trajectory on top.
+          drawPath(lastState.completePath, "rgba(148,163,184,0.35)", 1.5);
+          drawPath(smoothResult.points, "#f97d15", 3, "rgba(249,125,21,0.65)");
+        } else {
+          drawPath(lastState.completePath, "#f97d15", 3, "rgba(249,125,21,0.6)");
+        }
       } else {
         drawPath(lastState.completePath, "rgba(249,125,21,0.45)", 2.5);
         drawPath(lastState.segPath, "#1e9bff", 2.5, "rgba(30,155,255,0.4)");
@@ -864,9 +1111,18 @@
     ).join("") || `<div class="seg" style="opacity:.5">— awaiting segments —</div>`;
     $("t-total").textContent = (s.totalFuel ?? 0).toFixed(6) + " kg";
 
+    if (s.final && smoothResult) {
+      const rawLen = pathDistance(s.completePath || []);
+      const smLen = pathDistance(smoothResult.points || []);
+      $("t-radius").textContent = isFinite(smoothResult.minRadius)
+        ? smoothResult.minRadius.toFixed(1) + " m" : "— (straight)";
+      $("t-rawlen").textContent = rawLen.toFixed(1) + " m";
+      $("t-smoothlen").textContent = smLen.toFixed(1) + " m";
+    }
+
     const st = $("t-status");
     if (s.failed) { st.textContent = "No route found — obstacle blocks corridor"; st.className = "status failed"; }
-    else if (s.final) { st.textContent = "Mission complete — optimal path locked"; st.className = "status done"; }
+    else if (s.final) { st.textContent = "Mission complete — smoothed trajectory locked"; st.className = "status done"; }
     else { st.textContent = "Searching…"; st.className = "status running"; }
   }
 
@@ -881,7 +1137,7 @@
 
   function resetSearch(rebuild = true) {
     cancelAnimationFrame(rafId);
-    running = false; finished = false; gen = null; lastState = null;
+    running = false; finished = false; gen = null; lastState = null; smoothResult = null;
     const { w, h } = fitCanvas();
     if (rebuild) rebuildGraph();
     computeTransform(w, h);
@@ -895,6 +1151,7 @@
     $("t-g").textContent = "– kg"; $("t-f").textContent = "– kg";
     $("t-segs").innerHTML = `<div class="seg" style="opacity:.5">— awaiting segments —</div>`;
     $("t-total").textContent = "0.000000 kg";
+    $("t-radius").textContent = "– m"; $("t-rawlen").textContent = "– m"; $("t-smoothlen").textContent = "– m";
     const st = $("t-status"); st.textContent = "Idle — press Run"; st.className = "status";
   }
 
@@ -915,7 +1172,14 @@
         if (r.done) { running = false; finished = true; break; }
         lastState = r.value;
         if (lastState.newlyVisited) stampVisited(lastState.newlyVisited);
-        if (lastState.final || lastState.failed) { running = false; finished = true; break; }
+        if (lastState.final || lastState.failed) {
+          running = false; finished = true;
+          if (lastState.final && lastState.completePath && lastState.completePath.length > 2) {
+            try { smoothResult = smoothTrajectory(lastState.completePath, waypoints, env); }
+            catch (err) { console.error("smoothing failed", err); smoothResult = null; }
+          }
+          break;
+        }
       }
       updateTelemetry();
     }
@@ -924,6 +1188,13 @@
   }
 
   function runSearch() {
+    if (waypoints.length < 2) {
+      const st = $("t-status");
+      st.textContent = "Add at least 2 waypoints to plan";
+      st.className = "status failed";
+      if (!editMode) setEdit(true);
+      return;
+    }
     if (finished || !gen) { resetSearch(true); gen = planMission(graph, cost); finished = false; }
     running = true;
     $("t-status").textContent = "Searching…"; $("t-status").className = "status running";
@@ -945,6 +1216,26 @@
     $("speedVal").textContent = stepsPerFrame + " node" + (stepsPerFrame > 1 ? "s" : "") + "/frame";
   });
 
+  function updateHint() {
+    const h = $("stageHint");
+    if (!editMode) {
+      h.textContent = "Enable Edit to add waypoints & no-fly zones";
+      h.style.opacity = "0.5";
+      return;
+    }
+    h.style.opacity = "1";
+    if (waypoints.length === 0) h.textContent = "Click to drop your Start point";
+    else if (waypoints.length === 1) h.textContent = "Click to drop the Goal · Shift-click for a no-fly zone";
+    else h.textContent = "Click to add waypoints · Shift-click for no-fly zones · then Run";
+  }
+
+  function setEdit(on) {
+    editMode = on;
+    $("editBtn").textContent = "✎ Edit: " + (on ? "ON" : "OFF");
+    $("editBtn").classList.toggle("active-edit", on);
+    updateHint();
+  }
+
   $("runBtn").addEventListener("click", runSearch);
   $("pauseBtn").addEventListener("click", () => {
     if (finished) return;
@@ -953,11 +1244,13 @@
     if (running) { cancelAnimationFrame(rafId); rafId = requestAnimationFrame(frame); }
   });
   $("resetBtn").addEventListener("click", () => { $("pauseBtn").textContent = "Pause"; resetSearch(true); });
-  $("editBtn").addEventListener("click", () => {
-    editMode = !editMode;
-    $("editBtn").textContent = "✎ Edit Waypoints: " + (editMode ? "ON" : "OFF");
-    $("editBtn").classList.toggle("active-edit", editMode);
-    $("stageHint").style.opacity = editMode ? "1" : "0.5";
+  $("editBtn").addEventListener("click", () => setEdit(!editMode));
+  $("clearBtn").addEventListener("click", () => {
+    waypoints = []; zones = [];
+    $("preset").value = "custom";
+    $("pauseBtn").textContent = "Pause";
+    setEdit(true);              // drop straight into the sandbox
+    resetSearch(true);
   });
 
   canvas.addEventListener("click", e => {
@@ -971,6 +1264,7 @@
     }
     $("preset").value = "custom";
     resetSearch(true);
+    updateHint();
   });
 
   // mouse-glow on glass panels (matches rocket tool)
@@ -1007,6 +1301,7 @@
   // boot
   stepsPerFrame = +$("speed").value;
   loadScene("coastal");
+  updateHint();
   </script>
 </body>
 </html>
