@@ -679,6 +679,7 @@
        out so the black hole's rollback animation plays underneath, untouched. */
     #reservoir-swirl, #reservoir-swirl-gpu {
       position: fixed; inset: 0; z-index: 2;
+      display: block; width: 100vw; height: 100vh;   /* a <canvas> is a replaced element: inset:0 alone collapses it to its intrinsic 300x150 (squished top-left, lens off the cursor). Match #field and fill the viewport. */
       opacity: 0; pointer-events: none; transition: opacity .45s ease;
     }
     #reservoir-swirl-gpu { display: none; }   /* shown only when the WebGPU swirl takes over */
